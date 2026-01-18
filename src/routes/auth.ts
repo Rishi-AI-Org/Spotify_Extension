@@ -76,7 +76,7 @@ router.get('/callback', async (req: Request, res: Response) => {
 
     const { access_token, refresh_token, expires_in } = response.data;
 
-    // Send success page with token (user will copy this)
+    // Send success page that auto-saves token and closes
     res.send(`
       <html>
         <head>
@@ -88,53 +88,67 @@ router.get('/callback', async (req: Request, res: Response) => {
               padding: 20px;
               background: #1a1a1a;
               color: #fff;
-            }
-            .token-box {
-              background: #2a2a2a;
-              padding: 15px;
-              border-radius: 8px;
-              margin: 20px 0;
-              word-break: break-all;
-              font-family: monospace;
-              font-size: 12px;
-            }
-            button {
-              background: #1db954;
-              color: white;
-              border: none;
-              padding: 10px 20px;
-              border-radius: 20px;
-              cursor: pointer;
-              font-size: 14px;
-            }
-            button:hover {
-              background: #1ed760;
+              text-align: center;
             }
             .success {
               color: #1db954;
-              font-size: 24px;
+              font-size: 48px;
+              margin-bottom: 20px;
+            }
+            h1 {
+              color: #1db954;
               margin-bottom: 10px;
+            }
+            .message {
+              font-size: 18px;
+              margin: 20px 0;
+            }
+            .loader {
+              border: 3px solid #2a2a2a;
+              border-top: 3px solid #1db954;
+              border-radius: 50%;
+              width: 40px;
+              height: 40px;
+              animation: spin 1s linear infinite;
+              margin: 30px auto;
+            }
+            @keyframes spin {
+              0% { transform: rotate(0deg); }
+              100% { transform: rotate(360deg); }
             }
           </style>
         </head>
         <body>
-          <div class="success">✅ Authorization Successful!</div>
-          <p>Copy your access token below and paste it in the Groovy Spotify extension popup:</p>
-
-          <div class="token-box" id="token">${access_token}</div>
-
-          <button onclick="copyToken()">Copy Token</button>
-
-          <p style="margin-top: 30px; color: #888; font-size: 12px;">
-            Note: This token expires in ${expires_in} seconds (${Math.floor(expires_in / 3600)} hours).
-            You can close this window after copying the token.
+          <div class="success">✅</div>
+          <h1>Login Successful!</h1>
+          <p class="message">Saving your credentials...</p>
+          <div class="loader"></div>
+          <p style="color: #888; font-size: 14px; margin-top: 30px;">
+            This window will close automatically.
           </p>
 
           <script>
-            function copyToken() {
-              const token = document.getElementById('token').textContent;
-              navigator.clipboard.writeText(token);
-              alert('Token copied to clipboard!');
+            // Auto-save token to Chrome storage and close window
+            const token = '${access_token}';
+
+            // Try to save via Chrome extension API
+            if (typeof chrome !== 'undefined' && chrome.storage) {
+              chrome.storage.sync.set({ spotifyToken: token }, () => {
+                console.log('Token saved!');
+                setTimeout(() => window.close(), 1500);
+              });
+            } else {
+              // Fallback: send message to opener window
+              if (window.opener) {
+                window.opener.postMessage({
+                  type: 'SPOTIFY_TOKEN',
+                  token: token
+                }, '*');
+                setTimeout(() => window.close(), 1500);
+              } else {
+                document.querySelector('.message').textContent = 'Please close this window and click the extension icon again.';
+                document.querySelector('.loader').style.display = 'none';
+              }
             }
           </script>
         </body>
