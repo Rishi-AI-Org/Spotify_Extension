@@ -27,6 +27,7 @@ router.get('/:trackId', async (req: Request, res: Response) => {
     }
 
     const groovyPart: GroovyPart = {
+      track_id: data.track_id,
       intime: data.intime,
       outtime: data.outtime,
       source: data.source,
