@@ -256,27 +256,29 @@
 
   // Counter for API calls (to avoid rate limiting)
   let apiCallCounter = 0;
-  const API_CALL_INTERVAL = 6; // Call API every 6th iteration (3 seconds at 500ms interval)
+  const API_CALL_INTERVAL = 4; // Call API every 4th iteration (2 seconds at 500ms interval)
+  let lastApiDuration = 0;
 
   // Main monitoring function
   async function monitorPlayback() {
     if (!isEnabled) return;
 
-    // Try to get track ID from DOM first
-    let trackId = getCurrentTrackFromDOM();
+    // Get track ID from API (called periodically to avoid rate limits)
+    let trackId = lastApiTrackId;
 
-    // If DOM fails, use API as fallback (but not every iteration to avoid rate limits)
-    if (!trackId && apiCallCounter % API_CALL_INTERVAL === 0) {
+    if (apiCallCounter % API_CALL_INTERVAL === 0) {
       const apiData = await getTrackFromApi();
       if (apiData) {
         trackId = apiData.trackId;
+        lastApiDuration = apiData.duration;
       }
     }
     apiCallCounter++;
 
-    // Get time from DOM
+    // Get time from DOM (every iteration - no rate limits)
     const currentTimeMs = getCurrentTimeMs();
-    const durationMs = getTotalDurationMs();
+    // Use API duration as fallback if DOM fails
+    const durationMs = getTotalDurationMs() || lastApiDuration;
 
     // Debug logging (uncomment if needed)
     // console.log(`Groovy: trackId=${trackId}, time=${currentTimeMs}ms, duration=${durationMs}ms`);
