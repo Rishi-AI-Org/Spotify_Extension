@@ -11,30 +11,39 @@
   let hasSkippedToIntime = false;
   let monitoringInterval = null;
   let lastCheckedTime = 0;
+  let lastApiTrackId = null;
+  let lastApiProgress = 0;
 
-  // DOM Selectors for Spotify Web Player (may need updates if Spotify changes their DOM)
+  // DOM Selectors for Spotify Web Player (updated for 2024/2025)
   const SELECTORS = {
-    // Progress bar
+    // Progress bar - multiple fallbacks
     progressBar: '[data-testid="playback-progressbar"]',
-    progressBarClickable: '[data-testid="playback-progressbar"] [data-testid="progress-bar"]',
-    progressBarSlider: '.playback-bar [role="slider"]',
+    progressBarAlt: '[data-testid="progress-bar"]',
+    progressBarAlt2: '.playback-bar',
+    progressBarAlt3: '[class*="progress-bar"]',
 
-    // Time display
+    // Time display - multiple fallbacks
     currentTime: '[data-testid="playback-position"]',
+    currentTimeAlt: '[data-testid="current-time"]',
+    currentTimeAlt2: '.playback-bar__progress-time-elapsed',
+    currentTimeAlt3: '[class*="playback-position"]',
+
     totalDuration: '[data-testid="playback-duration"]',
 
-    // Controls
+    // Controls - multiple fallbacks
     nextButton: '[data-testid="control-button-skip-forward"]',
+    nextButtonAlt: 'button[aria-label="Next"]',
+    nextButtonAlt2: '[data-testid="control-button-next"]',
+    nextButtonAlt3: '.player-controls button[class*="skip-forward"]',
+
     playPauseButton: '[data-testid="control-button-playpause"]',
 
-    // Track info
+    // Track info - multiple fallbacks
     trackName: '[data-testid="context-item-link"]',
+    trackNameAlt: '[data-testid="nowplaying-track-link"]',
+    trackNameAlt2: 'a[href*="/track/"]',
     nowPlayingWidget: '[data-testid="now-playing-widget"]',
-
-    // Alternative selectors (backup)
-    progressBarAlt: '.playback-bar',
-    currentTimeAlt: '.playback-bar__progress-time-elapsed',
-    nextButtonAlt: '.player-controls__right button[aria-label*="Next"]'
+    nowPlayingWidgetAlt: '[data-testid="CoverSlotCollapsed__container"]'
   };
 
   // Parse time string (MM:SS or H:MM:SS) to milliseconds
@@ -54,16 +63,25 @@
     return 0;
   }
 
-  // Get current playback time from DOM
+  // Get current playback time from DOM (with multiple fallbacks)
   function getCurrentTimeMs() {
-    const timeElement = document.querySelector(SELECTORS.currentTime) ||
-                       document.querySelector(SELECTORS.currentTimeAlt);
+    const selectors = [
+      SELECTORS.currentTime,
+      SELECTORS.currentTimeAlt,
+      SELECTORS.currentTimeAlt2,
+      SELECTORS.currentTimeAlt3
+    ];
 
-    if (timeElement) {
-      return parseTimeToMs(timeElement.textContent);
+    for (const selector of selectors) {
+      const timeElement = document.querySelector(selector);
+      if (timeElement && timeElement.textContent) {
+        const time = parseTimeToMs(timeElement.textContent.trim());
+        if (time > 0) return time;
+      }
     }
 
-    return 0;
+    // Fallback to last API progress if DOM fails
+    return lastApiProgress;
   }
 
   // Get total duration from DOM
@@ -77,10 +95,32 @@
     return 0;
   }
 
+  // Get current track and progress from API via background script
+  async function getTrackFromApi() {
+    return new Promise((resolve) => {
+      chrome.runtime.sendMessage({ action: 'getCurrentTrack' }, (response) => {
+        if (response?.success && response.track) {
+          lastApiTrackId = response.track.id;
+          lastApiProgress = response.track.progress_ms || 0;
+          resolve({
+            trackId: response.track.id,
+            progress: response.track.progress_ms || 0,
+            duration: response.track.duration_ms || 0,
+            isPlaying: response.track.is_playing
+          });
+        } else {
+          resolve(null);
+        }
+      });
+    });
+  }
+
   // Click on progress bar at specific percentage
   function clickProgressBarAtPercentage(percentage) {
     const progressBar = document.querySelector(SELECTORS.progressBar) ||
-                       document.querySelector(SELECTORS.progressBarAlt);
+                       document.querySelector(SELECTORS.progressBarAlt) ||
+                       document.querySelector(SELECTORS.progressBarAlt2) ||
+                       document.querySelector(SELECTORS.progressBarAlt3);
 
     if (!progressBar) {
       console.log('Groovy: Progress bar not found');
@@ -138,7 +178,9 @@
   // Click next button to skip to next song
   function clickNextButton() {
     const nextButton = document.querySelector(SELECTORS.nextButton) ||
-                      document.querySelector(SELECTORS.nextButtonAlt);
+                      document.querySelector(SELECTORS.nextButtonAlt) ||
+                      document.querySelector(SELECTORS.nextButtonAlt2) ||
+                      document.querySelector(SELECTORS.nextButtonAlt3);
 
     if (nextButton) {
       nextButton.click();
@@ -150,20 +192,34 @@
     return false;
   }
 
-  // Get current track info from DOM
+  // Get current track info from DOM (with multiple fallbacks)
   function getCurrentTrackFromDOM() {
-    const nowPlaying = document.querySelector(SELECTORS.nowPlayingWidget);
-    const trackLink = document.querySelector(SELECTORS.trackName);
+    // Try multiple selectors for track link
+    const trackLinkSelectors = [
+      SELECTORS.trackName,
+      SELECTORS.trackNameAlt,
+      SELECTORS.trackNameAlt2
+    ];
 
-    if (trackLink) {
-      const href = trackLink.getAttribute('href');
-      if (href && href.includes('/track/')) {
-        const trackId = href.split('/track/')[1]?.split('?')[0];
-        return trackId;
+    for (const selector of trackLinkSelectors) {
+      const trackLink = document.querySelector(selector);
+      if (trackLink) {
+        const href = trackLink.getAttribute('href');
+        if (href && href.includes('/track/')) {
+          const trackId = href.split('/track/')[1]?.split('?')[0];
+          if (trackId) return trackId;
+        }
       }
     }
 
-    return null;
+    // Try to get from URL if on track page
+    const urlMatch = window.location.href.match(/\/track\/([a-zA-Z0-9]+)/);
+    if (urlMatch) {
+      return urlMatch[1];
+    }
+
+    // Fallback to last API track ID
+    return lastApiTrackId;
   }
 
   // Fetch groovy data from background script
@@ -198,13 +254,32 @@
     });
   }
 
+  // Counter for API calls (to avoid rate limiting)
+  let apiCallCounter = 0;
+  const API_CALL_INTERVAL = 6; // Call API every 6th iteration (3 seconds at 500ms interval)
+
   // Main monitoring function
   async function monitorPlayback() {
     if (!isEnabled) return;
 
-    const trackId = getCurrentTrackFromDOM();
+    // Try to get track ID from DOM first
+    let trackId = getCurrentTrackFromDOM();
+
+    // If DOM fails, use API as fallback (but not every iteration to avoid rate limits)
+    if (!trackId && apiCallCounter % API_CALL_INTERVAL === 0) {
+      const apiData = await getTrackFromApi();
+      if (apiData) {
+        trackId = apiData.trackId;
+      }
+    }
+    apiCallCounter++;
+
+    // Get time from DOM
     const currentTimeMs = getCurrentTimeMs();
     const durationMs = getTotalDurationMs();
+
+    // Debug logging (uncomment if needed)
+    // console.log(`Groovy: trackId=${trackId}, time=${currentTimeMs}ms, duration=${durationMs}ms`);
 
     // Track changed
     if (trackId && trackId !== currentTrackId) {
@@ -234,8 +309,8 @@
     if (currentGroovyData && durationMs > 0) {
       // Skip to intime if we haven't already and we're before intime
       if (!hasSkippedToIntime && currentTimeMs < currentGroovyData.intime) {
-        // Only skip if we're at the very beginning (within first 2 seconds)
-        if (currentTimeMs < 2000) {
+        // Only skip if we're at the very beginning (within first 3 seconds)
+        if (currentTimeMs < 3000) {
           console.log(`Groovy: Skipping to intime: ${currentGroovyData.intime}ms`);
           skipToTime(currentGroovyData.intime, durationMs);
           hasSkippedToIntime = true;

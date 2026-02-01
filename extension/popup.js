@@ -275,12 +275,23 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
   }
 
-  // Get current playback time from content script
+  // Get current playback time (try content script first, then API)
   async function getCurrentPlaybackTime() {
-    const response = await sendToContentScript({ action: 'getCurrentPlaybackInfo' });
+    // First try DOM via content script
+    const domResponse = await sendToContentScript({ action: 'getCurrentPlaybackInfo' });
 
-    if (response.success) {
-      return response.currentTime;
+    if (domResponse.success && domResponse.currentTime > 0) {
+      return domResponse.currentTime;
+    }
+
+    // Fallback to API (for "Now" button click, one-time call is fine)
+    try {
+      const apiResponse = await sendMessage({ action: 'getCurrentTrack' });
+      if (apiResponse.success && apiResponse.track) {
+        return apiResponse.track.progress_ms || 0;
+      }
+    } catch (error) {
+      console.error('Failed to get playback time from API:', error);
     }
 
     return 0;
