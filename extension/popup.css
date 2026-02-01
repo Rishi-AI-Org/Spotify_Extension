@@ -10,8 +10,9 @@ body {
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
   background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
   color: #ffffff;
-  width: 320px;
+  width: 360px;
   min-height: 200px;
+  overflow-x: hidden;
 }
 
 .container {
@@ -269,8 +270,9 @@ body {
 
 .time-inputs {
   display: flex;
-  gap: 12px;
+  gap: 16px;
   margin-bottom: 16px;
+  width: 100%;
 }
 
 .time-input-group {
@@ -286,7 +288,8 @@ body {
 
 .time-input-wrapper {
   display: flex;
-  gap: 8px;
+  gap: 6px;
+  align-items: center;
 }
 
 .time-input {
