@@ -256,14 +256,15 @@
 
   // Counter for API calls (to avoid rate limiting)
   let apiCallCounter = 0;
-  const API_CALL_INTERVAL = 4; // Call API every 4th iteration (2 seconds at 500ms interval)
+  const API_CALL_INTERVAL = 2; // Call API every 2nd iteration (1 second at 500ms interval)
   let lastApiDuration = 0;
+  let trackJustChanged = false;
 
   // Main monitoring function
   async function monitorPlayback() {
     if (!isEnabled) return;
 
-    // Get track ID from API (called periodically to avoid rate limits)
+    // Get track ID from API (called every 1 second to detect track changes quickly)
     let trackId = lastApiTrackId;
 
     if (apiCallCounter % API_CALL_INTERVAL === 0) {
@@ -280,40 +281,55 @@
     // Use API duration as fallback if DOM fails
     const durationMs = getTotalDurationMs() || lastApiDuration;
 
-    // Debug logging (uncomment if needed)
-    // console.log(`Groovy: trackId=${trackId}, time=${currentTimeMs}ms, duration=${durationMs}ms`);
+    // Debug logging
+    console.log(`Groovy: trackId=${trackId}, time=${currentTimeMs}ms, duration=${durationMs}ms`);
 
-    // Track changed
+    // Track changed - fetch groovy data immediately
     if (trackId && trackId !== currentTrackId) {
       console.log(`Groovy: New track detected: ${trackId}`);
       currentTrackId = trackId;
       hasSkippedToIntime = false;
       lastCheckedTime = 0;
+      trackJustChanged = true;
 
-      // Try to get groovy data (prefetched first, then fetch)
+      // Try to get groovy data (prefetched first for instant access, then fetch as backup)
       currentGroovyData = await getPrefetchedGroovy(trackId);
 
       if (!currentGroovyData) {
+        console.log('Groovy: Data not prefetched, fetching from database...');
         currentGroovyData = await fetchGroovyData(trackId);
+      } else {
+        console.log('Groovy: Using prefetched data!');
       }
 
       if (currentGroovyData) {
         console.log(`Groovy: Found groovy data - intime: ${currentGroovyData.intime}ms, outtime: ${currentGroovyData.outtime}ms`);
 
-        // Trigger prefetch for next songs
+        // Trigger prefetch for next songs in queue
         chrome.runtime.sendMessage({ action: 'prefetchGroovyData' });
+
+        // Skip to intime immediately if we have data and time is available
+        if (durationMs > 0 && currentGroovyData.intime > 0) {
+          console.log(`Groovy: Immediately skipping to intime: ${currentGroovyData.intime}ms`);
+          skipToTime(currentGroovyData.intime, durationMs);
+          hasSkippedToIntime = true;
+        }
       } else {
         console.log('Groovy: No groovy data for this track');
+        // Still prefetch for next songs
+        chrome.runtime.sendMessage({ action: 'prefetchGroovyData' });
       }
+    } else {
+      trackJustChanged = false;
     }
 
     // Apply groovy logic if we have data
     if (currentGroovyData && durationMs > 0) {
-      // Skip to intime if we haven't already and we're before intime
+      // Fallback: Skip to intime if we haven't already (in case immediate skip failed)
       if (!hasSkippedToIntime && currentTimeMs < currentGroovyData.intime) {
-        // Only skip if we're at the very beginning (within first 3 seconds)
-        if (currentTimeMs < 3000) {
-          console.log(`Groovy: Skipping to intime: ${currentGroovyData.intime}ms`);
+        // Skip if we're still in the first 5 seconds (gives more time for fallback)
+        if (currentTimeMs < 5000) {
+          console.log(`Groovy: Fallback skip to intime: ${currentGroovyData.intime}ms`);
           skipToTime(currentGroovyData.intime, durationMs);
           hasSkippedToIntime = true;
         }
@@ -321,7 +337,7 @@
         hasSkippedToIntime = true;
       }
 
-      // Check if we've reached outtime
+      // Check if we've reached outtime - skip to next song
       if (currentTimeMs >= currentGroovyData.outtime && currentTimeMs > lastCheckedTime) {
         console.log(`Groovy: Reached outtime (${currentGroovyData.outtime}ms), skipping to next song`);
         clickNextButton();
@@ -435,7 +451,9 @@
     // Wait for Spotify player to load
     const checkPlayer = setInterval(() => {
       const progressBar = document.querySelector(SELECTORS.progressBar) ||
-                         document.querySelector(SELECTORS.progressBarAlt);
+                         document.querySelector(SELECTORS.progressBarAlt) ||
+                         document.querySelector(SELECTORS.progressBarAlt2) ||
+                         document.querySelector(SELECTORS.progressBarAlt3);
 
       if (progressBar) {
         clearInterval(checkPlayer);
@@ -445,6 +463,12 @@
         chrome.storage.local.get('groovy_enabled', (result) => {
           const enabled = result.groovy_enabled !== false; // Default to true
           setEnabled(enabled);
+
+          // Prefetch groovy data for current track and queue immediately
+          if (enabled) {
+            console.log('Groovy: Prefetching data for current track and queue...');
+            chrome.runtime.sendMessage({ action: 'prefetchGroovyData' });
+          }
         });
       }
     }, 1000);
