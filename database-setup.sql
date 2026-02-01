@@ -11,9 +11,13 @@ CREATE TABLE IF NOT EXISTS groovy_parts (
   outtime INTEGER NOT NULL,
   source TEXT DEFAULT 'user',
   confidence_score FLOAT,
+  contribution_count INTEGER DEFAULT 1,
   created_at TIMESTAMP DEFAULT NOW(),
   updated_at TIMESTAMP DEFAULT NOW()
 );
+
+-- Add contribution_count column if table already exists (migration)
+ALTER TABLE groovy_parts ADD COLUMN IF NOT EXISTS contribution_count INTEGER DEFAULT 1;
 
 -- Create indexes for faster queries
 CREATE INDEX IF NOT EXISTS idx_track_id ON groovy_parts(track_id);

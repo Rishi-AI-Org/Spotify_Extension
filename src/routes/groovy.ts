@@ -44,13 +44,14 @@ router.get('/:trackId', async (req: Request, res: Response) => {
 /**
  * POST /api/groovy
  * Create or update groovy part data for a track
+ * If track already has groovy data, averages intime/outtime with existing values
  */
 router.post('/', async (req: Request, res: Response) => {
   try {
     const groovyData: GroovyPart = req.body;
 
     // Validate required fields
-    if (!groovyData.track_id || !groovyData.intime || !groovyData.outtime) {
+    if (!groovyData.track_id || groovyData.intime === undefined || groovyData.outtime === undefined) {
       return res.status(400).json({
         error: 'Missing required fields: track_id, intime, outtime'
       });
@@ -63,27 +64,58 @@ router.post('/', async (req: Request, res: Response) => {
       });
     }
 
-    // Upsert (insert or update if exists)
-    const { data, error } = await supabase
+    // Check if track already has groovy data
+    const { data: existingData, error: fetchError } = await supabase
       .from('groovy_parts')
-      .upsert({
-        track_id: groovyData.track_id,
-        track_name: groovyData.track_name,
-        artist_name: groovyData.artist_name,
-        intime: groovyData.intime,
-        outtime: groovyData.outtime,
-        source: groovyData.source || 'user',
-        confidence_score: groovyData.confidence_score,
-        updated_at: new Date().toISOString()
-      }, {
-        onConflict: 'track_id'
-      })
-      .select()
+      .select('*')
+      .eq('track_id', groovyData.track_id)
       .single();
 
-    if (error) throw error;
+    let result;
 
-    res.status(201).json(data);
+    if (existingData && !fetchError) {
+      // Track exists - calculate averaged values
+      const newIntime = Math.round((existingData.intime + groovyData.intime) / 2);
+      const newOuttime = Math.round((existingData.outtime + groovyData.outtime) / 2);
+      const newContributionCount = (existingData.contribution_count || 1) + 1;
+
+      // Update with averaged values
+      const { data, error } = await supabase
+        .from('groovy_parts')
+        .update({
+          intime: newIntime,
+          outtime: newOuttime,
+          contribution_count: newContributionCount,
+          updated_at: new Date().toISOString()
+        })
+        .eq('track_id', groovyData.track_id)
+        .select()
+        .single();
+
+      if (error) throw error;
+      result = data;
+    } else {
+      // Track doesn't exist - insert new record
+      const { data, error } = await supabase
+        .from('groovy_parts')
+        .insert({
+          track_id: groovyData.track_id,
+          track_name: groovyData.track_name,
+          artist_name: groovyData.artist_name,
+          intime: groovyData.intime,
+          outtime: groovyData.outtime,
+          source: groovyData.source || 'user',
+          confidence_score: groovyData.confidence_score,
+          contribution_count: 1
+        })
+        .select()
+        .single();
+
+      if (error) throw error;
+      result = data;
+    }
+
+    res.status(201).json(result);
   } catch (error) {
     console.error('Error saving groovy part:', error);
     res.status(500).json({ error: 'Internal server error' });

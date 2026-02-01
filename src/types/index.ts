@@ -7,6 +7,7 @@ export interface GroovyPart {
   outtime: number; // milliseconds
   source?: 'user' | 'global';
   confidence_score?: number;
+  contribution_count?: number; // number of users who contributed to this groovy part
   created_at?: string;
   updated_at?: string;
 }
