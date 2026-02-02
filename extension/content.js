@@ -144,99 +144,56 @@
       return false;
     }
 
-    const rect = progressBar.getBoundingClientRect();
+    // Try to find the actual clickable element inside the progress bar
+    // Spotify uses nested elements - we need to find the right one
+    const clickableElement =
+      progressBar.querySelector('[role="slider"]') ||
+      progressBar.querySelector('input[type="range"]') ||
+      progressBar.querySelector('[data-testid="progress-bar"]') ||
+      progressBar;
+
+    const rect = clickableElement.getBoundingClientRect();
     const clickX = rect.left + (rect.width * percentage);
     const clickY = rect.top + (rect.height / 2);
 
-    console.log(`Groovy: Attempting click at X=${clickX.toFixed(0)}, Y=${clickY.toFixed(0)} (${(percentage * 100).toFixed(1)}%)`);
+    console.log(`Groovy: Found element: ${clickableElement.tagName}, class: ${clickableElement.className}`);
+    console.log(`Groovy: Attempting seek at X=${clickX.toFixed(0)}, Y=${clickY.toFixed(0)} (${(percentage * 100).toFixed(1)}%)`);
 
-    // Method 1: Use PointerEvents (modern approach)
-    try {
-      const pointerDown = new PointerEvent('pointerdown', {
-        bubbles: true,
-        cancelable: true,
-        view: window,
-        clientX: clickX,
-        clientY: clickY,
-        pointerId: 1,
-        pointerType: 'mouse',
-        isPrimary: true
-      });
+    // Try all methods in sequence
 
-      const pointerUp = new PointerEvent('pointerup', {
-        bubbles: true,
-        cancelable: true,
-        view: window,
-        clientX: clickX,
-        clientY: clickY,
-        pointerId: 1,
-        pointerType: 'mouse',
-        isPrimary: true
-      });
+    // Method 1: Direct click simulation with all event types
+    const eventInit = {
+      bubbles: true,
+      cancelable: true,
+      view: window,
+      clientX: clickX,
+      clientY: clickY,
+      screenX: clickX,
+      screenY: clickY,
+      button: 0,
+      buttons: 1
+    };
 
-      progressBar.dispatchEvent(pointerDown);
+    // Dispatch pointer events
+    clickableElement.dispatchEvent(new PointerEvent('pointerdown', { ...eventInit, pointerId: 1, pointerType: 'mouse', isPrimary: true }));
+    clickableElement.dispatchEvent(new MouseEvent('mousedown', eventInit));
 
-      // Small delay before pointerup
+    setTimeout(() => {
+      clickableElement.dispatchEvent(new PointerEvent('pointerup', { ...eventInit, pointerId: 1, pointerType: 'mouse', isPrimary: true }));
+      clickableElement.dispatchEvent(new MouseEvent('mouseup', eventInit));
+      clickableElement.dispatchEvent(new MouseEvent('click', eventInit));
+
+      console.log(`Groovy: Dispatched all events at ${(percentage * 100).toFixed(1)}%`);
+
+      // Method 2: Try clicking parent elements too
       setTimeout(() => {
-        progressBar.dispatchEvent(pointerUp);
-
-        // Also try click event as backup
-        const clickEvent = new MouseEvent('click', {
-          bubbles: true,
-          cancelable: true,
-          view: window,
-          clientX: clickX,
-          clientY: clickY
-        });
-        progressBar.dispatchEvent(clickEvent);
-
-        console.log(`Groovy: Dispatched pointer and click events at ${(percentage * 100).toFixed(1)}%`);
-
-        // Reset skip flag after a short delay
-        setTimeout(() => {
-          isSkipping = false;
-        }, 500);
-      }, 50);
-
-    } catch (error) {
-      console.log('Groovy: PointerEvent failed, trying MouseEvent');
-
-      // Fallback: Use MouseEvents
-      const mousedownEvent = new MouseEvent('mousedown', {
-        bubbles: true,
-        cancelable: true,
-        view: window,
-        clientX: clickX,
-        clientY: clickY,
-        button: 0
-      });
-
-      const mouseupEvent = new MouseEvent('mouseup', {
-        bubbles: true,
-        cancelable: true,
-        view: window,
-        clientX: clickX,
-        clientY: clickY,
-        button: 0
-      });
-
-      const clickEvent = new MouseEvent('click', {
-        bubbles: true,
-        cancelable: true,
-        view: window,
-        clientX: clickX,
-        clientY: clickY,
-        button: 0
-      });
-
-      progressBar.dispatchEvent(mousedownEvent);
-      progressBar.dispatchEvent(mouseupEvent);
-      progressBar.dispatchEvent(clickEvent);
-
-      setTimeout(() => {
+        if (progressBar !== clickableElement) {
+          progressBar.dispatchEvent(new MouseEvent('click', eventInit));
+          console.log('Groovy: Also clicked parent progress bar');
+        }
         isSkipping = false;
-      }, 500);
-    }
+      }, 100);
+    }, 50);
 
     return true;
   }
