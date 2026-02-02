@@ -115,8 +115,24 @@
     });
   }
 
-  // Click on progress bar at specific percentage
+  // Debounce flag to prevent multiple rapid skips
+  let isSkipping = false;
+  let lastSkipTime = 0;
+  const SKIP_COOLDOWN = 2000; // 2 second cooldown between skips
+
+  // Click on progress bar at specific percentage (improved for Spotify 2024/2025)
   function clickProgressBarAtPercentage(percentage) {
+    // Prevent rapid multiple clicks
+    const now = Date.now();
+    if (isSkipping || (now - lastSkipTime) < SKIP_COOLDOWN) {
+      console.log('Groovy: Skip cooldown active, ignoring');
+      return false;
+    }
+
+    isSkipping = true;
+    lastSkipTime = now;
+
+    // Try to find the progress bar with multiple selectors
     const progressBar = document.querySelector(SELECTORS.progressBar) ||
                        document.querySelector(SELECTORS.progressBarAlt) ||
                        document.querySelector(SELECTORS.progressBarAlt2) ||
@@ -124,6 +140,7 @@
 
     if (!progressBar) {
       console.log('Groovy: Progress bar not found');
+      isSkipping = false;
       return false;
     }
 
@@ -131,36 +148,96 @@
     const clickX = rect.left + (rect.width * percentage);
     const clickY = rect.top + (rect.height / 2);
 
-    // Create and dispatch mouse events
-    const mousedownEvent = new MouseEvent('mousedown', {
-      bubbles: true,
-      cancelable: true,
-      view: window,
-      clientX: clickX,
-      clientY: clickY
-    });
+    console.log(`Groovy: Attempting click at X=${clickX.toFixed(0)}, Y=${clickY.toFixed(0)} (${(percentage * 100).toFixed(1)}%)`);
 
-    const mouseupEvent = new MouseEvent('mouseup', {
-      bubbles: true,
-      cancelable: true,
-      view: window,
-      clientX: clickX,
-      clientY: clickY
-    });
+    // Method 1: Use PointerEvents (modern approach)
+    try {
+      const pointerDown = new PointerEvent('pointerdown', {
+        bubbles: true,
+        cancelable: true,
+        view: window,
+        clientX: clickX,
+        clientY: clickY,
+        pointerId: 1,
+        pointerType: 'mouse',
+        isPrimary: true
+      });
 
-    const clickEvent = new MouseEvent('click', {
-      bubbles: true,
-      cancelable: true,
-      view: window,
-      clientX: clickX,
-      clientY: clickY
-    });
+      const pointerUp = new PointerEvent('pointerup', {
+        bubbles: true,
+        cancelable: true,
+        view: window,
+        clientX: clickX,
+        clientY: clickY,
+        pointerId: 1,
+        pointerType: 'mouse',
+        isPrimary: true
+      });
 
-    progressBar.dispatchEvent(mousedownEvent);
-    progressBar.dispatchEvent(mouseupEvent);
-    progressBar.dispatchEvent(clickEvent);
+      progressBar.dispatchEvent(pointerDown);
 
-    console.log(`Groovy: Clicked progress bar at ${(percentage * 100).toFixed(1)}%`);
+      // Small delay before pointerup
+      setTimeout(() => {
+        progressBar.dispatchEvent(pointerUp);
+
+        // Also try click event as backup
+        const clickEvent = new MouseEvent('click', {
+          bubbles: true,
+          cancelable: true,
+          view: window,
+          clientX: clickX,
+          clientY: clickY
+        });
+        progressBar.dispatchEvent(clickEvent);
+
+        console.log(`Groovy: Dispatched pointer and click events at ${(percentage * 100).toFixed(1)}%`);
+
+        // Reset skip flag after a short delay
+        setTimeout(() => {
+          isSkipping = false;
+        }, 500);
+      }, 50);
+
+    } catch (error) {
+      console.log('Groovy: PointerEvent failed, trying MouseEvent');
+
+      // Fallback: Use MouseEvents
+      const mousedownEvent = new MouseEvent('mousedown', {
+        bubbles: true,
+        cancelable: true,
+        view: window,
+        clientX: clickX,
+        clientY: clickY,
+        button: 0
+      });
+
+      const mouseupEvent = new MouseEvent('mouseup', {
+        bubbles: true,
+        cancelable: true,
+        view: window,
+        clientX: clickX,
+        clientY: clickY,
+        button: 0
+      });
+
+      const clickEvent = new MouseEvent('click', {
+        bubbles: true,
+        cancelable: true,
+        view: window,
+        clientX: clickX,
+        clientY: clickY,
+        button: 0
+      });
+
+      progressBar.dispatchEvent(mousedownEvent);
+      progressBar.dispatchEvent(mouseupEvent);
+      progressBar.dispatchEvent(clickEvent);
+
+      setTimeout(() => {
+        isSkipping = false;
+      }, 500);
+    }
+
     return true;
   }
 
