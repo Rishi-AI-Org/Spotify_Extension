@@ -294,8 +294,10 @@
       return urlMatch[1];
     }
 
-    // Fallback to last API track ID
-    return lastApiTrackId;
+    // Don't fall back to lastApiTrackId as it may be stale during track transitions
+    // Return null so the caller knows we couldn't determine the current track from DOM
+    // The monitoring loop will wait for DOM to update with the new track
+    return null;
   }
 
   // Fetch groovy data from background script
@@ -377,6 +379,10 @@
       hasSkippedToIntime = false;
       lastCheckedTime = 0;
 
+      // Clear stale API state from previous track
+      lastApiTrackId = trackId; // Update to new track
+      lastApiProgress = 0;
+
       // Try to get groovy data (prefetched first for instant access)
       currentGroovyData = await getPrefetchedGroovy(trackId);
 
@@ -424,6 +430,11 @@
         // currentTrackId stays so when DOM updates with new track, we detect the change
         currentGroovyData = null;
         hasSkippedToIntime = false;
+
+        // Reset API state so fallbacks don't return stale data during track transition
+        lastApiTrackId = null;
+        lastApiProgress = 0;
+        lastCheckedTime = 0;
       }
     }
 
