@@ -419,8 +419,9 @@
         console.log(`Groovy: Reached outtime (${currentGroovyData.outtime}ms), skipping to next song via DOM`);
         clickNextButton();
 
-        // Reset for next track
-        currentTrackId = null;
+        // Reset groovy data but DON'T reset currentTrackId
+        // This ensures we detect the ACTUAL new track, not re-detect the old one
+        // currentTrackId stays so when DOM updates with new track, we detect the change
         currentGroovyData = null;
         hasSkippedToIntime = false;
       }
