@@ -1,5 +1,5 @@
 // Groovy Spotify Extension - Content Script
-// Handles DOM manipulation on Spotify Web Player
+// Uses API for playback control, DOM only for progress monitoring
 
 (function() {
   'use strict';
@@ -7,107 +7,64 @@
   // State
   let isEnabled = true;
   let currentTrackId = null;
+  let currentTrackDuration = 0;
   let currentGroovyData = null;
-  let hasSkippedToIntime = false;
+  let hasAppliedIntime = false;
   let monitoringInterval = null;
-  let lastCheckedTime = 0;
-  let lastApiTrackId = null;
-  let lastApiProgress = 0;
+  let lastProgressMs = 0;
+  let lastProgressTime = Date.now();
+  let queueGroovyData = {}; // Cache of groovy data for queue tracks
+  let isProcessing = false; // Prevent concurrent processing
 
-  // DOM Selectors for Spotify Web Player (updated for 2024/2025)
+  // DOM Selectors for progress bar only
   const SELECTORS = {
-    // Progress bar - multiple fallbacks
-    progressBar: '[data-testid="playback-progressbar"]',
-    progressBarAlt: '[data-testid="progress-bar"]',
-    progressBarAlt2: '.playback-bar',
-    progressBarAlt3: '[class*="progress-bar"]',
-
-    // Time display - multiple fallbacks
     currentTime: '[data-testid="playback-position"]',
     currentTimeAlt: '[data-testid="current-time"]',
     currentTimeAlt2: '.playback-bar__progress-time-elapsed',
-    currentTimeAlt3: '[class*="playback-position"]',
-
-    totalDuration: '[data-testid="playback-duration"]',
-
-    // Controls - multiple fallbacks
-    nextButton: '[data-testid="control-button-skip-forward"]',
-    nextButtonAlt: 'button[aria-label="Next"]',
-    nextButtonAlt2: '[data-testid="control-button-next"]',
-    nextButtonAlt3: '.player-controls button[class*="skip-forward"]',
-
-    playPauseButton: '[data-testid="control-button-playpause"]',
-
-    // Track info - multiple fallbacks
-    trackName: '[data-testid="context-item-link"]',
-    trackNameAlt: '[data-testid="nowplaying-track-link"]',
-    trackNameAlt2: 'a[href*="/track/"]',
-    nowPlayingWidget: '[data-testid="now-playing-widget"]',
-    nowPlayingWidgetAlt: '[data-testid="CoverSlotCollapsed__container"]'
+    progressBar: '[data-testid="playback-progressbar"]'
   };
+
+  // Constants
+  const QUEUE_REFRESH_INTERVAL = 30000; // 30 seconds
+  const ABRUPT_CHANGE_THRESHOLD = 3000; // 3 seconds - if progress jumps more than this, assume track change
+  const MONITORING_INTERVAL = 500; // Check every 500ms
 
   // Parse time string (MM:SS or H:MM:SS) to milliseconds
   function parseTimeToMs(timeStr) {
     if (!timeStr) return 0;
-
     const parts = timeStr.split(':').map(Number);
-
     if (parts.length === 2) {
-      // MM:SS
       return (parts[0] * 60 + parts[1]) * 1000;
     } else if (parts.length === 3) {
-      // H:MM:SS
       return (parts[0] * 3600 + parts[1] * 60 + parts[2]) * 1000;
     }
-
     return 0;
   }
 
-  // Get current playback time from DOM (with multiple fallbacks)
-  function getCurrentTimeMs() {
+  // Get current playback progress from DOM (no rate limits)
+  function getProgressFromDOM() {
     const selectors = [
       SELECTORS.currentTime,
       SELECTORS.currentTimeAlt,
-      SELECTORS.currentTimeAlt2,
-      SELECTORS.currentTimeAlt3
+      SELECTORS.currentTimeAlt2
     ];
 
     for (const selector of selectors) {
       const timeElement = document.querySelector(selector);
       if (timeElement && timeElement.textContent) {
         const time = parseTimeToMs(timeElement.textContent.trim());
-        if (time > 0) return time;
+        if (time >= 0) return time;
       }
     }
-
-    // Fallback to last API progress if DOM fails
-    return lastApiProgress;
+    return -1; // Return -1 if we can't read DOM
   }
 
-  // Get total duration from DOM
-  function getTotalDurationMs() {
-    const durationElement = document.querySelector(SELECTORS.totalDuration);
-
-    if (durationElement) {
-      return parseTimeToMs(durationElement.textContent);
-    }
-
-    return 0;
-  }
-
-  // Get current track and progress from API via background script
-  async function getTrackFromApi() {
+  // API: Get current track
+  async function apiGetCurrentTrack() {
     return new Promise((resolve) => {
       chrome.runtime.sendMessage({ action: 'getCurrentTrack' }, (response) => {
         if (response?.success && response.track) {
-          lastApiTrackId = response.track.id;
-          lastApiProgress = response.track.progress_ms || 0;
-          resolve({
-            trackId: response.track.id,
-            progress: response.track.progress_ms || 0,
-            duration: response.track.duration_ms || 0,
-            isPlaying: response.track.is_playing
-          });
+          resolve(response.track);
         } else {
           resolve(null);
         }
@@ -115,330 +72,257 @@
     });
   }
 
-  // Debounce flag to prevent multiple rapid skips
-  let isSkipping = false;
-  let lastSkipTime = 0;
-  const SKIP_COOLDOWN = 1500; // 1.5 second cooldown between skips
-
-  // Seek to specific percentage using INPUT value (for Spotify's range slider)
-  async function seekToPercentage(percentage, targetTimeMs) {
-    // Prevent rapid multiple seeks
-    const now = Date.now();
-    if (isSkipping || (now - lastSkipTime) < SKIP_COOLDOWN) {
-      console.log('Groovy: Skip cooldown active, ignoring');
-      return false;
-    }
-
-    isSkipping = true;
-    lastSkipTime = now;
-
-    // Try to find the progress bar
-    const progressBar = document.querySelector(SELECTORS.progressBar) ||
-                       document.querySelector(SELECTORS.progressBarAlt) ||
-                       document.querySelector(SELECTORS.progressBarAlt2) ||
-                       document.querySelector(SELECTORS.progressBarAlt3);
-
-    if (!progressBar) {
-      console.log('Groovy: Progress bar not found');
-      isSkipping = false;
-      return false;
-    }
-
-    // Find the INPUT element (range slider)
-    const inputElement = progressBar.querySelector('input[type="range"]') ||
-                        progressBar.querySelector('input') ||
-                        progressBar.querySelector('[role="slider"]');
-
-    if (inputElement && inputElement.tagName === 'INPUT') {
-      console.log(`Groovy: Found INPUT element, setting value to ${(percentage * 100).toFixed(1)}%`);
-
-      // Get the max value of the input (usually 100 or duration in ms)
-      const max = parseFloat(inputElement.max) || 100;
-      const min = parseFloat(inputElement.min) || 0;
-      const targetValue = min + (max - min) * percentage;
-
-      // Store original value
-      const originalValue = inputElement.value;
-
-      // Set the value directly
-      inputElement.value = targetValue;
-
-      // Create and dispatch native events that React listens to
-      const inputEvent = new Event('input', { bubbles: true, cancelable: true });
-      const changeEvent = new Event('change', { bubbles: true, cancelable: true });
-
-      // For React, we need to trigger the native value setter
-      const nativeInputValueSetter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
-      nativeInputValueSetter.call(inputElement, targetValue);
-
-      inputElement.dispatchEvent(inputEvent);
-      inputElement.dispatchEvent(changeEvent);
-
-      console.log(`Groovy: Set input value from ${originalValue} to ${targetValue} (max: ${max})`);
-
-      // Also try pointer events as backup
-      const rect = inputElement.getBoundingClientRect();
-      const clickX = rect.left + (rect.width * percentage);
-      const clickY = rect.top + (rect.height / 2);
-
-      setTimeout(() => {
-        const eventInit = {
-          bubbles: true,
-          cancelable: true,
-          view: window,
-          clientX: clickX,
-          clientY: clickY
-        };
-
-        inputElement.dispatchEvent(new PointerEvent('pointerdown', { ...eventInit, pointerId: 1, pointerType: 'mouse', isPrimary: true }));
-        inputElement.dispatchEvent(new MouseEvent('mousedown', eventInit));
-
-        setTimeout(() => {
-          inputElement.dispatchEvent(new PointerEvent('pointerup', { ...eventInit, pointerId: 1, pointerType: 'mouse', isPrimary: true }));
-          inputElement.dispatchEvent(new MouseEvent('mouseup', eventInit));
-          inputElement.dispatchEvent(new MouseEvent('click', eventInit));
-
-          console.log('Groovy: Also dispatched pointer/mouse events');
-          isSkipping = false;
-        }, 50);
-      }, 50);
-
-      return true;
-    }
-
-    // Fallback: Try clicking on the progress bar directly
-    console.log('Groovy: No INPUT found, trying click method');
-    const rect = progressBar.getBoundingClientRect();
-    const clickX = rect.left + (rect.width * percentage);
-    const clickY = rect.top + (rect.height / 2);
-
-    const eventInit = {
-      bubbles: true,
-      cancelable: true,
-      view: window,
-      clientX: clickX,
-      clientY: clickY,
-      button: 0,
-      buttons: 1
-    };
-
-    progressBar.dispatchEvent(new PointerEvent('pointerdown', { ...eventInit, pointerId: 1, pointerType: 'mouse', isPrimary: true }));
-    progressBar.dispatchEvent(new MouseEvent('mousedown', eventInit));
-
-    setTimeout(() => {
-      progressBar.dispatchEvent(new PointerEvent('pointerup', { ...eventInit, pointerId: 1, pointerType: 'mouse', isPrimary: true }));
-      progressBar.dispatchEvent(new MouseEvent('mouseup', eventInit));
-      progressBar.dispatchEvent(new MouseEvent('click', eventInit));
-      isSkipping = false;
-    }, 50);
-
-    return true;
-  }
-
-  // Legacy function name for compatibility
-  function clickProgressBarAtPercentage(percentage) {
-    return seekToPercentage(percentage, 0);
-  }
-
-  // Skip to specific time in milliseconds
-  function skipToTime(timeMs, totalDurationMs) {
-    if (!totalDurationMs || totalDurationMs <= 0) {
-      console.log('Groovy: Invalid duration');
-      return false;
-    }
-
-    const percentage = Math.min(Math.max(timeMs / totalDurationMs, 0), 1);
-    return clickProgressBarAtPercentage(percentage);
-  }
-
-  // Click next button to skip to next song
-  function clickNextButton() {
-    const nextButton = document.querySelector(SELECTORS.nextButton) ||
-                      document.querySelector(SELECTORS.nextButtonAlt) ||
-                      document.querySelector(SELECTORS.nextButtonAlt2) ||
-                      document.querySelector(SELECTORS.nextButtonAlt3);
-
-    if (nextButton) {
-      nextButton.click();
-      console.log('Groovy: Clicked next button');
-      return true;
-    }
-
-    console.log('Groovy: Next button not found');
-    return false;
-  }
-
-  // Get current track info from DOM (with multiple fallbacks)
-  function getCurrentTrackFromDOM() {
-    // Try multiple selectors for track link
-    const trackLinkSelectors = [
-      SELECTORS.trackName,
-      SELECTORS.trackNameAlt,
-      SELECTORS.trackNameAlt2
-    ];
-
-    for (const selector of trackLinkSelectors) {
-      const trackLink = document.querySelector(selector);
-      if (trackLink) {
-        const href = trackLink.getAttribute('href');
-        if (href && href.includes('/track/')) {
-          const trackId = href.split('/track/')[1]?.split('?')[0];
-          if (trackId) return trackId;
+  // API: Get queue
+  async function apiGetQueue() {
+    return new Promise((resolve) => {
+      chrome.runtime.sendMessage({ action: 'getQueue' }, (response) => {
+        if (response?.success && response.queue) {
+          resolve(response.queue);
+        } else {
+          resolve(null);
         }
-      }
-    }
-
-    // Try to get from URL if on track page
-    const urlMatch = window.location.href.match(/\/track\/([a-zA-Z0-9]+)/);
-    if (urlMatch) {
-      return urlMatch[1];
-    }
-
-    // Don't fall back to lastApiTrackId as it may be stale during track transitions
-    // Return null so the caller knows we couldn't determine the current track from DOM
-    // The monitoring loop will wait for DOM to update with the new track
-    return null;
+      });
+    });
   }
 
-  // Fetch groovy data from background script
+  // API: Seek to position
+  async function apiSeek(positionMs) {
+    return new Promise((resolve) => {
+      chrome.runtime.sendMessage({ action: 'seekToPosition', positionMs }, (response) => {
+        resolve(response?.success || false);
+      });
+    });
+  }
+
+  // API: Skip to next track
+  async function apiSkipToNext() {
+    return new Promise((resolve) => {
+      chrome.runtime.sendMessage({ action: 'skipToNext' }, (response) => {
+        resolve(response?.success || false);
+      });
+    });
+  }
+
+  // Fetch groovy data for a track
   async function fetchGroovyData(trackId) {
     return new Promise((resolve) => {
-      chrome.runtime.sendMessage(
-        { action: 'getGroovyData', trackId },
-        (response) => {
-          if (response?.success && response.groovyData) {
-            resolve(response.groovyData);
-          } else {
-            resolve(null);
-          }
+      chrome.runtime.sendMessage({ action: 'getGroovyData', trackId }, (response) => {
+        if (response?.success && response.groovyData) {
+          resolve(response.groovyData);
+        } else {
+          resolve(null);
         }
-      );
+      });
     });
   }
 
-  // Get prefetched groovy data
-  async function getPrefetchedGroovy(trackId) {
-    return new Promise((resolve) => {
-      chrome.runtime.sendMessage(
-        { action: 'getPrefetchedGroovy' },
-        (response) => {
-          if (response?.success && response.prefetched?.[trackId]) {
-            resolve(response.prefetched[trackId]);
-          } else {
-            resolve(null);
-          }
+  // Fetch groovy data for all tracks in queue and cache it
+  async function fetchQueueGroovyData(queue) {
+    if (!queue || !queue.queue) return;
+
+    const trackIds = queue.queue.map(t => t.id);
+    console.log(`Groovy: Fetching groovy data for ${trackIds.length} queue tracks`);
+
+    // Fetch in parallel
+    const promises = trackIds.map(async (id) => {
+      if (!queueGroovyData[id]) {
+        const data = await fetchGroovyData(id);
+        if (data) {
+          queueGroovyData[id] = data;
+          console.log(`Groovy: Cached groovy data for queue track ${id}`);
         }
-      );
+      }
     });
+
+    await Promise.all(promises);
   }
 
-  // Counter for API cross-check (every 30 seconds)
-  let lastApiCrossCheck = 0;
-  const API_CROSSCHECK_INTERVAL = 30000; // 30 seconds in ms
-  let lastApiDuration = 0;
-
-  // Main monitoring function - DOM based with periodic API cross-check
-  async function monitorPlayback() {
-    if (!isEnabled) return;
-
-    // Get track ID from DOM (primary method - no rate limits)
-    let trackId = getCurrentTrackFromDOM();
-
-    // Get time from DOM (every iteration - no rate limits)
-    const currentTimeMs = getCurrentTimeMs();
-    const durationMs = getTotalDurationMs() || lastApiDuration;
-
-    // API cross-check every 30 seconds (for queue refresh and track verification)
-    const now = Date.now();
-    if (now - lastApiCrossCheck >= API_CROSSCHECK_INTERVAL) {
-      lastApiCrossCheck = now;
-      console.log('Groovy: API cross-check (every 30s)...');
-
-      const apiData = await getTrackFromApi();
-      if (apiData) {
-        lastApiDuration = apiData.duration;
-        // If DOM failed to get track, use API
-        if (!trackId) {
-          trackId = apiData.trackId;
-        }
-      }
-
-      // Refresh queue prefetch
-      chrome.runtime.sendMessage({ action: 'prefetchGroovyData' });
+  // Main initialization cycle - called on load and when track changes abruptly
+  async function initializeCycle() {
+    if (isProcessing) {
+      console.log('Groovy: Already processing, skipping');
+      return;
     }
 
-    // Debug logging (less verbose)
-    if (trackId !== currentTrackId || currentTimeMs % 5000 < 500) {
-      console.log(`Groovy: track=${trackId}, time=${currentTimeMs}ms, duration=${durationMs}ms`);
-    }
+    isProcessing = true;
+    console.log('Groovy: Starting initialization cycle...');
 
-    // Track changed (detected via DOM) - apply groovy data immediately
-    if (trackId && trackId !== currentTrackId) {
-      console.log(`Groovy: New track detected via DOM: ${trackId}`);
-      currentTrackId = trackId;
-      hasSkippedToIntime = false;
-      lastCheckedTime = 0;
-
-      // Clear stale API state from previous track
-      lastApiTrackId = trackId; // Update to new track
-      lastApiProgress = 0;
-
-      // Try to get groovy data (prefetched first for instant access)
-      currentGroovyData = await getPrefetchedGroovy(trackId);
-
-      if (!currentGroovyData) {
-        console.log('Groovy: Data not prefetched, fetching from database...');
-        currentGroovyData = await fetchGroovyData(trackId);
-      } else {
-        console.log('Groovy: Using prefetched data - instant!');
+    try {
+      // Step 1: Get current track from API
+      const track = await apiGetCurrentTrack();
+      if (!track) {
+        console.log('Groovy: No track playing');
+        isProcessing = false;
+        return;
       }
+
+      console.log(`Groovy: Current track: ${track.name} (${track.id})`);
+      currentTrackId = track.id;
+      currentTrackDuration = track.duration_ms;
+      hasAppliedIntime = false;
+
+      // Step 2: Get groovy data for current track
+      currentGroovyData = queueGroovyData[track.id] || await fetchGroovyData(track.id);
 
       if (currentGroovyData) {
         console.log(`Groovy: Found groovy data - intime: ${currentGroovyData.intime}ms, outtime: ${currentGroovyData.outtime}ms`);
 
-        // Skip to intime immediately via DOM
-        if (durationMs > 0 && currentGroovyData.intime > 0) {
-          console.log(`Groovy: Skipping to intime via DOM: ${currentGroovyData.intime}ms`);
-          skipToTime(currentGroovyData.intime, durationMs);
-          hasSkippedToIntime = true;
+        // Step 3: Get current progress from DOM
+        const currentProgress = getProgressFromDOM();
+        if (currentProgress < 0) {
+          // Fallback to API progress if DOM fails
+          console.log('Groovy: DOM progress unavailable, using API progress');
+        }
+        const progress = currentProgress >= 0 ? currentProgress : track.progress_ms;
+
+        console.log(`Groovy: Current progress: ${progress}ms`);
+
+        // Step 4: Apply groovy logic
+        if (progress < currentGroovyData.intime) {
+          // Before intime - seek to intime
+          console.log(`Groovy: Progress (${progress}ms) < intime (${currentGroovyData.intime}ms), seeking via API`);
+          const seekSuccess = await apiSeek(currentGroovyData.intime);
+          if (seekSuccess) {
+            console.log('Groovy: Seek successful');
+            hasAppliedIntime = true;
+            lastProgressMs = currentGroovyData.intime;
+          } else {
+            console.log('Groovy: Seek failed');
+          }
+        } else if (progress >= currentGroovyData.intime && progress < currentGroovyData.outtime) {
+          // Within groovy range - let it play
+          console.log(`Groovy: Progress (${progress}ms) is within groovy range, playing normally`);
+          hasAppliedIntime = true;
+          lastProgressMs = progress;
+        } else {
+          // Past outtime - skip to next
+          console.log(`Groovy: Progress (${progress}ms) > outtime (${currentGroovyData.outtime}ms), skipping to next via API`);
+          await handleSkipToNext();
+          return; // handleSkipToNext will reinitialize
         }
       } else {
         console.log('Groovy: No groovy data for this track, playing normally');
+        lastProgressMs = track.progress_ms;
+      }
+
+      // Step 5: Fetch queue and groovy data for queue tracks
+      const queue = await apiGetQueue();
+      if (queue) {
+        await fetchQueueGroovyData(queue);
+      }
+
+      lastProgressTime = Date.now();
+
+    } catch (error) {
+      console.error('Groovy: Error in initialization cycle:', error);
+    }
+
+    isProcessing = false;
+  }
+
+  // Handle skip to next track
+  async function handleSkipToNext() {
+    console.log('Groovy: Skipping to next track via API...');
+
+    // Reset state
+    currentTrackId = null;
+    currentGroovyData = null;
+    hasAppliedIntime = false;
+    lastProgressMs = 0;
+
+    const skipSuccess = await apiSkipToNext();
+    if (skipSuccess) {
+      console.log('Groovy: Skip successful, waiting for track change...');
+      // Wait a bit for Spotify to update, then reinitialize
+      setTimeout(async () => {
+        isProcessing = false;
+        await initializeCycle();
+      }, 1000);
+    } else {
+      console.log('Groovy: Skip failed, reinitializing...');
+      isProcessing = false;
+      await initializeCycle();
+    }
+  }
+
+  // Monitor playback progress via DOM
+  async function monitorProgress() {
+    if (!isEnabled || isProcessing) return;
+
+    const currentProgress = getProgressFromDOM();
+    if (currentProgress < 0) return; // Can't read DOM
+
+    const now = Date.now();
+    const timeDelta = now - lastProgressTime;
+    const expectedProgress = lastProgressMs + timeDelta;
+
+    // Check for abrupt change (track change by user)
+    // If progress jumped backwards significantly or jumped forward way more than expected
+    const progressDelta = currentProgress - lastProgressMs;
+
+    if (lastProgressMs > 0 && currentTrackId) {
+      // Detect abrupt backward jump (new song started)
+      if (progressDelta < -ABRUPT_CHANGE_THRESHOLD) {
+        console.log(`Groovy: Abrupt change detected (progress went from ${lastProgressMs}ms to ${currentProgress}ms)`);
+        isProcessing = false;
+        await initializeCycle();
+        return;
+      }
+
+      // Detect significant forward jump beyond expected playback
+      // (user scrubbed forward or track changed)
+      if (progressDelta > timeDelta + ABRUPT_CHANGE_THRESHOLD) {
+        console.log(`Groovy: Abrupt forward jump detected (expected ~${expectedProgress}ms, got ${currentProgress}ms)`);
+        isProcessing = false;
+        await initializeCycle();
+        return;
       }
     }
 
-    // Apply groovy logic if we have data
-    if (currentGroovyData && durationMs > 0) {
-      // Fallback: Skip to intime if we haven't already (in case immediate skip failed)
-      if (!hasSkippedToIntime && currentTimeMs < currentGroovyData.intime) {
-        if (currentTimeMs < 5000) {
-          console.log(`Groovy: Fallback skip to intime: ${currentGroovyData.intime}ms`);
-          skipToTime(currentGroovyData.intime, durationMs);
-          hasSkippedToIntime = true;
+    // Update tracking
+    lastProgressMs = currentProgress;
+    lastProgressTime = now;
+
+    // Check if we've reached outtime
+    if (currentGroovyData && currentProgress >= currentGroovyData.outtime) {
+      console.log(`Groovy: Reached outtime (${currentGroovyData.outtime}ms), skipping to next`);
+      isProcessing = true;
+      await handleSkipToNext();
+    }
+  }
+
+  // Periodic queue refresh
+  let lastQueueRefresh = 0;
+  async function refreshQueuePeriodically() {
+    const now = Date.now();
+    if (now - lastQueueRefresh < QUEUE_REFRESH_INTERVAL) return;
+
+    lastQueueRefresh = now;
+    console.log('Groovy: Refreshing queue (30s interval)...');
+
+    try {
+      const queue = await apiGetQueue();
+      if (queue) {
+        // Check if queue changed
+        const newQueueIds = queue.queue.map(t => t.id).join(',');
+        const cachedIds = Object.keys(queueGroovyData).join(',');
+
+        if (newQueueIds !== cachedIds) {
+          console.log('Groovy: Queue changed, fetching new groovy data');
+          await fetchQueueGroovyData(queue);
         }
-      } else if (currentTimeMs >= currentGroovyData.intime) {
-        hasSkippedToIntime = true;
       }
-
-      // Check if we've reached outtime - skip to next song via DOM
-      if (currentTimeMs >= currentGroovyData.outtime && currentTimeMs > lastCheckedTime) {
-        console.log(`Groovy: Reached outtime (${currentGroovyData.outtime}ms), skipping to next song via DOM`);
-        clickNextButton();
-
-        // Reset groovy data but DON'T reset currentTrackId
-        // This ensures we detect the ACTUAL new track, not re-detect the old one
-        // currentTrackId stays so when DOM updates with new track, we detect the change
-        currentGroovyData = null;
-        hasSkippedToIntime = false;
-
-        // Reset API state so fallbacks don't return stale data during track transition
-        lastApiTrackId = null;
-        lastApiProgress = 0;
-        lastCheckedTime = 0;
-      }
+    } catch (error) {
+      console.error('Groovy: Error refreshing queue:', error);
     }
+  }
 
-    lastCheckedTime = currentTimeMs;
+  // Main monitoring loop
+  async function monitoringLoop() {
+    if (!isEnabled) return;
+
+    await monitorProgress();
+    await refreshQueuePeriodically();
   }
 
   // Start monitoring
@@ -447,9 +331,8 @@
       clearInterval(monitoringInterval);
     }
 
-    // Check playback every 500ms
-    monitoringInterval = setInterval(monitorPlayback, 500);
-    console.log('Groovy: Playback monitoring started');
+    monitoringInterval = setInterval(monitoringLoop, MONITORING_INTERVAL);
+    console.log('Groovy: Monitoring started (DOM progress, 500ms interval)');
   }
 
   // Stop monitoring
@@ -458,7 +341,7 @@
       clearInterval(monitoringInterval);
       monitoringInterval = null;
     }
-    console.log('Groovy: Playback monitoring stopped');
+    console.log('Groovy: Monitoring stopped');
   }
 
   // Toggle groovy functionality
@@ -467,6 +350,7 @@
 
     if (enabled) {
       startMonitoring();
+      initializeCycle();
     } else {
       stopMonitoring();
     }
@@ -481,8 +365,8 @@
       currentTrackId,
       hasGroovyData: currentGroovyData !== null,
       groovyData: currentGroovyData,
-      currentTime: getCurrentTimeMs(),
-      duration: getTotalDurationMs()
+      currentProgress: getProgressFromDOM(),
+      duration: currentTrackDuration
     };
   }
 
@@ -500,31 +384,34 @@
 
       case 'skipToIntime':
         if (currentGroovyData) {
-          const duration = getTotalDurationMs();
-          skipToTime(currentGroovyData.intime, duration);
-          sendResponse({ success: true });
+          apiSeek(currentGroovyData.intime).then(success => {
+            sendResponse({ success });
+          });
+          return true; // Async response
         } else {
           sendResponse({ success: false, error: 'No groovy data' });
         }
         break;
 
       case 'skipToNext':
-        clickNextButton();
-        sendResponse({ success: true });
-        break;
+        handleSkipToNext().then(() => {
+          sendResponse({ success: true });
+        });
+        return true; // Async response
 
-      case 'testProgressBar':
-        // Test function to click at a specific percentage
-        const result = clickProgressBarAtPercentage(request.percentage || 0.5);
-        sendResponse({ success: result });
-        break;
+      case 'reinitialize':
+        isProcessing = false;
+        initializeCycle().then(() => {
+          sendResponse({ success: true });
+        });
+        return true; // Async response
 
       case 'getCurrentPlaybackInfo':
         sendResponse({
           success: true,
-          trackId: getCurrentTrackFromDOM(),
-          currentTime: getCurrentTimeMs(),
-          duration: getTotalDurationMs()
+          trackId: currentTrackId,
+          currentTime: getProgressFromDOM(),
+          duration: currentTrackDuration
         });
         break;
 
@@ -540,57 +427,17 @@
     // Wait for Spotify player to load
     const checkPlayer = setInterval(async () => {
       const progressBar = document.querySelector(SELECTORS.progressBar) ||
-                         document.querySelector(SELECTORS.progressBarAlt) ||
-                         document.querySelector(SELECTORS.progressBarAlt2) ||
-                         document.querySelector(SELECTORS.progressBarAlt3);
+                         document.querySelector(SELECTORS.currentTime);
 
       if (progressBar) {
         clearInterval(checkPlayer);
-        console.log('Groovy: Spotify player detected, initializing...');
+        console.log('Groovy: Spotify player detected');
 
         // Load enabled state from storage
         const { groovy_enabled } = await chrome.storage.local.get('groovy_enabled');
         const enabled = groovy_enabled !== false; // Default to true
 
         if (enabled) {
-          console.log('Groovy: Initial API call - fetching current track and queue...');
-
-          // API call on load: get current track + queue
-          const apiData = await getTrackFromApi();
-          if (apiData) {
-            lastApiDuration = apiData.duration;
-            currentTrackId = apiData.trackId;
-            console.log(`Groovy: Current track from API: ${apiData.trackId}`);
-
-            // Prefetch groovy data for current track and entire queue
-            console.log('Groovy: Prefetching groovy data for current track and queue...');
-            await chrome.runtime.sendMessage({ action: 'prefetchGroovyData' });
-
-            // Check if current track has groovy data and apply it
-            currentGroovyData = await getPrefetchedGroovy(apiData.trackId);
-            if (!currentGroovyData) {
-              currentGroovyData = await fetchGroovyData(apiData.trackId);
-            }
-
-            if (currentGroovyData) {
-              console.log(`Groovy: Current track has groovy data - intime: ${currentGroovyData.intime}ms, outtime: ${currentGroovyData.outtime}ms`);
-              const durationMs = getTotalDurationMs() || apiData.duration;
-
-              // Apply groovy data via DOM if we're near the start
-              if (durationMs > 0 && currentGroovyData.intime > 0) {
-                const currentTime = getCurrentTimeMs();
-                if (currentTime < currentGroovyData.intime) {
-                  console.log(`Groovy: Applying intime skip via DOM: ${currentGroovyData.intime}ms`);
-                  skipToTime(currentGroovyData.intime, durationMs);
-                  hasSkippedToIntime = true;
-                }
-              }
-            } else {
-              console.log('Groovy: Current track has no groovy data, playing normally');
-            }
-          }
-
-          // Start monitoring (DOM-based)
           setEnabled(true);
         } else {
           setEnabled(false);
@@ -609,5 +456,5 @@
     initialize();
   }
 
-  console.log('Groovy: Content script loaded');
+  console.log('Groovy: Content script loaded (API-based playback control)');
 })();

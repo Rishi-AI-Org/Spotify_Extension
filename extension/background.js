@@ -10,7 +10,8 @@ const CONFIG = {
   SCOPES: [
     'user-read-playback-state',
     'user-read-currently-playing',
-    'user-read-playback-position'
+    'user-read-playback-position',
+    'user-modify-playback-state'
   ].join(' ')
 };
 
@@ -354,6 +355,48 @@ async function prefetchGroovyData() {
   }
 }
 
+// Seek to position in currently playing track
+async function seekToPosition(positionMs) {
+  const token = await getValidToken();
+  if (!token) {
+    throw new Error('Not authenticated');
+  }
+
+  const response = await fetch(`${CONFIG.SPOTIFY_API_BASE}/me/player/seek?position_ms=${positionMs}`, {
+    method: 'PUT',
+    headers: {
+      'Authorization': `Bearer ${token.access_token}`
+    }
+  });
+
+  if (!response.ok && response.status !== 204) {
+    throw new Error('Failed to seek');
+  }
+
+  return true;
+}
+
+// Skip to next track
+async function skipToNext() {
+  const token = await getValidToken();
+  if (!token) {
+    throw new Error('Not authenticated');
+  }
+
+  const response = await fetch(`${CONFIG.SPOTIFY_API_BASE}/me/player/next`, {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${token.access_token}`
+    }
+  });
+
+  if (!response.ok && response.status !== 204) {
+    throw new Error('Failed to skip to next');
+  }
+
+  return true;
+}
+
 // Logout - clear stored tokens
 async function logout() {
   await chrome.storage.local.remove(['spotify_token', 'prefetched_groovy']);
@@ -411,6 +454,14 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         case 'getPrefetchedGroovy':
           const { prefetched_groovy } = await chrome.storage.local.get('prefetched_groovy');
           return { success: true, prefetched: prefetched_groovy || {} };
+
+        case 'seekToPosition':
+          await seekToPosition(request.positionMs);
+          return { success: true };
+
+        case 'skipToNext':
+          await skipToNext();
+          return { success: true };
 
         default:
           return { success: false, error: 'Unknown action' };
