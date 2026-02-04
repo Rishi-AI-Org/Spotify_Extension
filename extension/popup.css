@@ -129,6 +129,28 @@ body {
   fill: currentColor;
 }
 
+/* Toggles Container - Side by Side */
+.toggles-container {
+  display: flex;
+  gap: 16px;
+  padding: 12px 0;
+  margin-bottom: 16px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.toggle-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1;
+}
+
+.toggle-item span {
+  font-size: 13px;
+  color: #b3b3b3;
+  white-space: nowrap;
+}
+
 /* Toggle */
 .toggle-row {
   display: flex;

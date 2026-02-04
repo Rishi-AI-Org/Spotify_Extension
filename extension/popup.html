@@ -27,13 +27,22 @@
 
     <!-- Main Section (shown when logged in) -->
     <section id="main-section" class="section hidden">
-      <!-- Toggle -->
-      <div class="toggle-row">
-        <span>Enable Groovy</span>
-        <label class="toggle">
-          <input type="checkbox" id="enable-toggle" checked>
-          <span class="toggle-slider"></span>
-        </label>
+      <!-- Toggles Row - Side by Side -->
+      <div class="toggles-container">
+        <div class="toggle-item">
+          <span>Enable</span>
+          <label class="toggle">
+            <input type="checkbox" id="enable-toggle" checked>
+            <span class="toggle-slider"></span>
+          </label>
+        </div>
+        <div class="toggle-item">
+          <span>Auto Skip</span>
+          <label class="toggle">
+            <input type="checkbox" id="autoskip-toggle" checked>
+            <span class="toggle-slider"></span>
+          </label>
+        </div>
       </div>
 
       <!-- Current Track Info -->

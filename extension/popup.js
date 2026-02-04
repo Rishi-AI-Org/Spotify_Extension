@@ -7,6 +7,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   const loginBtn = document.getElementById('login-btn');
   const logoutBtn = document.getElementById('logout-btn');
   const enableToggle = document.getElementById('enable-toggle');
+  const autoskipToggle = document.getElementById('autoskip-toggle');
   const trackInfo = document.getElementById('track-info');
   const groovyEditor = document.getElementById('groovy-editor');
   const existingGroovy = document.getElementById('existing-groovy');
@@ -350,6 +351,16 @@ document.addEventListener('DOMContentLoaded', async () => {
     showStatusBar(enabled ? 'Groovy enabled' : 'Groovy disabled');
   });
 
+  // Auto Skip toggle
+  autoskipToggle.addEventListener('change', async () => {
+    const autoskip = autoskipToggle.checked;
+
+    // Save to storage
+    await chrome.storage.local.set({ groovy_autoskip: autoskip });
+
+    showStatusBar(autoskip ? 'Auto skip enabled' : 'Auto skip disabled');
+  });
+
   // Set intime to current playback time
   setIntimeBtn.addEventListener('click', async () => {
     const currentTime = await getCurrentPlaybackTime();
@@ -376,9 +387,10 @@ document.addEventListener('DOMContentLoaded', async () => {
     });
   });
 
-  // Load saved enabled state
-  const { groovy_enabled } = await chrome.storage.local.get('groovy_enabled');
+  // Load saved settings
+  const { groovy_enabled, groovy_autoskip } = await chrome.storage.local.get(['groovy_enabled', 'groovy_autoskip']);
   enableToggle.checked = groovy_enabled !== false;
+  autoskipToggle.checked = groovy_autoskip !== false;
 
   // Initialize
   await checkLoginStatus();

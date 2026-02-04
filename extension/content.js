@@ -202,10 +202,18 @@
           hasAppliedIntime = true;
           lastProgressMs = progress;
         } else {
-          // Past outtime - skip to next
-          console.log(`Groovy: Progress (${progress}ms) > outtime (${currentGroovyData.outtime}ms), skipping to next via API`);
-          await handleSkipToNext();
-          return; // handleSkipToNext will reinitialize
+          // Past outtime - check if auto skip is enabled
+          const { groovy_autoskip } = await chrome.storage.local.get('groovy_autoskip');
+          if (groovy_autoskip !== false) {
+            console.log(`Groovy: Progress (${progress}ms) > outtime (${currentGroovyData.outtime}ms), auto-skipping to next via API`);
+            await handleSkipToNext();
+            return; // handleSkipToNext will reinitialize
+          } else {
+            console.log(`Groovy: Progress (${progress}ms) > outtime (${currentGroovyData.outtime}ms), auto-skip disabled - playing normally`);
+            // Clear groovy data so we don't keep checking outtime
+            currentGroovyData = null;
+            lastProgressMs = progress;
+          }
         }
       } else {
         console.log('Groovy: No groovy data for this track, playing normally');
@@ -292,9 +300,25 @@
 
     // Check if we've reached outtime
     if (currentGroovyData && currentProgress >= currentGroovyData.outtime) {
-      console.log(`Groovy: Reached outtime (${currentGroovyData.outtime}ms), skipping to next`);
-      isProcessing = true;
-      await handleSkipToNext();
+      // Check if auto skip is enabled
+      try {
+        const { groovy_autoskip } = await chrome.storage.local.get('groovy_autoskip');
+        if (groovy_autoskip !== false) {
+          console.log(`Groovy: Reached outtime (${currentGroovyData.outtime}ms), auto-skipping to next`);
+          isProcessing = true;
+          await handleSkipToNext();
+        } else {
+          console.log(`Groovy: Reached outtime (${currentGroovyData.outtime}ms), auto-skip disabled - continuing playback`);
+          // Don't clear currentGroovyData - keep monitoring for track changes
+          // Just mark that we've passed outtime so we don't log repeatedly
+          currentGroovyData = null;
+        }
+      } catch (e) {
+        // If storage access fails, default to skipping
+        console.log(`Groovy: Reached outtime (${currentGroovyData.outtime}ms), skipping to next`);
+        isProcessing = true;
+        await handleSkipToNext();
+      }
     }
   }
 
