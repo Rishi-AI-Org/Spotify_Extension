@@ -36,7 +36,7 @@
   "content_scripts": [
     {
       "matches": ["https://open.spotify.com/*"],
-      "js": ["content.js"],
+      "js": ["content.js", "eval.js"],
       "run_at": "document_idle"
     }
   ],
