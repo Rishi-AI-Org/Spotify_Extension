@@ -118,11 +118,11 @@
   // Debounce flag to prevent multiple rapid skips
   let isSkipping = false;
   let lastSkipTime = 0;
-  const SKIP_COOLDOWN = 2000; // 2 second cooldown between skips
+  const SKIP_COOLDOWN = 1500; // 1.5 second cooldown between skips
 
-  // Click on progress bar at specific percentage (improved for Spotify 2024/2025)
-  function clickProgressBarAtPercentage(percentage) {
-    // Prevent rapid multiple clicks
+  // Seek to specific percentage using INPUT value (for Spotify's range slider)
+  async function seekToPercentage(percentage, targetTimeMs) {
+    // Prevent rapid multiple seeks
     const now = Date.now();
     if (isSkipping || (now - lastSkipTime) < SKIP_COOLDOWN) {
       console.log('Groovy: Skip cooldown active, ignoring');
@@ -132,7 +132,7 @@
     isSkipping = true;
     lastSkipTime = now;
 
-    // Try to find the progress bar with multiple selectors
+    // Try to find the progress bar
     const progressBar = document.querySelector(SELECTORS.progressBar) ||
                        document.querySelector(SELECTORS.progressBarAlt) ||
                        document.querySelector(SELECTORS.progressBarAlt2) ||
@@ -144,58 +144,100 @@
       return false;
     }
 
-    // Try to find the actual clickable element inside the progress bar
-    // Spotify uses nested elements - we need to find the right one
-    const clickableElement =
-      progressBar.querySelector('[role="slider"]') ||
-      progressBar.querySelector('input[type="range"]') ||
-      progressBar.querySelector('[data-testid="progress-bar"]') ||
-      progressBar;
+    // Find the INPUT element (range slider)
+    const inputElement = progressBar.querySelector('input[type="range"]') ||
+                        progressBar.querySelector('input') ||
+                        progressBar.querySelector('[role="slider"]');
 
-    const rect = clickableElement.getBoundingClientRect();
+    if (inputElement && inputElement.tagName === 'INPUT') {
+      console.log(`Groovy: Found INPUT element, setting value to ${(percentage * 100).toFixed(1)}%`);
+
+      // Get the max value of the input (usually 100 or duration in ms)
+      const max = parseFloat(inputElement.max) || 100;
+      const min = parseFloat(inputElement.min) || 0;
+      const targetValue = min + (max - min) * percentage;
+
+      // Store original value
+      const originalValue = inputElement.value;
+
+      // Set the value directly
+      inputElement.value = targetValue;
+
+      // Create and dispatch native events that React listens to
+      const inputEvent = new Event('input', { bubbles: true, cancelable: true });
+      const changeEvent = new Event('change', { bubbles: true, cancelable: true });
+
+      // For React, we need to trigger the native value setter
+      const nativeInputValueSetter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
+      nativeInputValueSetter.call(inputElement, targetValue);
+
+      inputElement.dispatchEvent(inputEvent);
+      inputElement.dispatchEvent(changeEvent);
+
+      console.log(`Groovy: Set input value from ${originalValue} to ${targetValue} (max: ${max})`);
+
+      // Also try pointer events as backup
+      const rect = inputElement.getBoundingClientRect();
+      const clickX = rect.left + (rect.width * percentage);
+      const clickY = rect.top + (rect.height / 2);
+
+      setTimeout(() => {
+        const eventInit = {
+          bubbles: true,
+          cancelable: true,
+          view: window,
+          clientX: clickX,
+          clientY: clickY
+        };
+
+        inputElement.dispatchEvent(new PointerEvent('pointerdown', { ...eventInit, pointerId: 1, pointerType: 'mouse', isPrimary: true }));
+        inputElement.dispatchEvent(new MouseEvent('mousedown', eventInit));
+
+        setTimeout(() => {
+          inputElement.dispatchEvent(new PointerEvent('pointerup', { ...eventInit, pointerId: 1, pointerType: 'mouse', isPrimary: true }));
+          inputElement.dispatchEvent(new MouseEvent('mouseup', eventInit));
+          inputElement.dispatchEvent(new MouseEvent('click', eventInit));
+
+          console.log('Groovy: Also dispatched pointer/mouse events');
+          isSkipping = false;
+        }, 50);
+      }, 50);
+
+      return true;
+    }
+
+    // Fallback: Try clicking on the progress bar directly
+    console.log('Groovy: No INPUT found, trying click method');
+    const rect = progressBar.getBoundingClientRect();
     const clickX = rect.left + (rect.width * percentage);
     const clickY = rect.top + (rect.height / 2);
 
-    console.log(`Groovy: Found element: ${clickableElement.tagName}, class: ${clickableElement.className}`);
-    console.log(`Groovy: Attempting seek at X=${clickX.toFixed(0)}, Y=${clickY.toFixed(0)} (${(percentage * 100).toFixed(1)}%)`);
-
-    // Try all methods in sequence
-
-    // Method 1: Direct click simulation with all event types
     const eventInit = {
       bubbles: true,
       cancelable: true,
       view: window,
       clientX: clickX,
       clientY: clickY,
-      screenX: clickX,
-      screenY: clickY,
       button: 0,
       buttons: 1
     };
 
-    // Dispatch pointer events
-    clickableElement.dispatchEvent(new PointerEvent('pointerdown', { ...eventInit, pointerId: 1, pointerType: 'mouse', isPrimary: true }));
-    clickableElement.dispatchEvent(new MouseEvent('mousedown', eventInit));
+    progressBar.dispatchEvent(new PointerEvent('pointerdown', { ...eventInit, pointerId: 1, pointerType: 'mouse', isPrimary: true }));
+    progressBar.dispatchEvent(new MouseEvent('mousedown', eventInit));
 
     setTimeout(() => {
-      clickableElement.dispatchEvent(new PointerEvent('pointerup', { ...eventInit, pointerId: 1, pointerType: 'mouse', isPrimary: true }));
-      clickableElement.dispatchEvent(new MouseEvent('mouseup', eventInit));
-      clickableElement.dispatchEvent(new MouseEvent('click', eventInit));
-
-      console.log(`Groovy: Dispatched all events at ${(percentage * 100).toFixed(1)}%`);
-
-      // Method 2: Try clicking parent elements too
-      setTimeout(() => {
-        if (progressBar !== clickableElement) {
-          progressBar.dispatchEvent(new MouseEvent('click', eventInit));
-          console.log('Groovy: Also clicked parent progress bar');
-        }
-        isSkipping = false;
-      }, 100);
+      progressBar.dispatchEvent(new PointerEvent('pointerup', { ...eventInit, pointerId: 1, pointerType: 'mouse', isPrimary: true }));
+      progressBar.dispatchEvent(new MouseEvent('mouseup', eventInit));
+      progressBar.dispatchEvent(new MouseEvent('click', eventInit));
+      isSkipping = false;
     }, 50);
 
     return true;
+  }
+
+  // Legacy function name for compatibility
+  function clickProgressBarAtPercentage(percentage) {
+    return seekToPercentage(percentage, 0);
   }
 
   // Skip to specific time in milliseconds
