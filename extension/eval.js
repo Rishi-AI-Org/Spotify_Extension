@@ -1,11 +1,41 @@
 // Groovy Extension - Evaluation/Debug Script
 // Run these tests from the browser console on open.spotify.com
-// Copy and paste into console, or load via content script
 
 (function() {
   'use strict';
 
-  const EVAL_VERSION = '1.0.0';
+  const EVAL_VERSION = '1.0.2';
+
+  // Check if extension context is valid
+  function isExtensionValid() {
+    try {
+      return chrome.runtime && chrome.runtime.id;
+    } catch (e) {
+      return false;
+    }
+  }
+
+  // Safe message sender (Promise-based)
+  function sendMessage(message) {
+    return new Promise((resolve) => {
+      if (!isExtensionValid()) {
+        resolve({ success: false, error: 'Extension context invalidated - please refresh the page' });
+        return;
+      }
+
+      try {
+        chrome.runtime.sendMessage(message, (response) => {
+          if (chrome.runtime.lastError) {
+            resolve({ success: false, error: chrome.runtime.lastError.message });
+          } else {
+            resolve(response || { success: false, error: 'No response' });
+          }
+        });
+      } catch (e) {
+        resolve({ success: false, error: 'Extension context invalidated - please refresh the page' });
+      }
+    });
+  }
 
   // Test results storage
   const testResults = {
@@ -88,29 +118,20 @@
   async function testAPIGetCurrentTrack() {
     log('Testing API getCurrentTrack...', 'test');
 
-    return new Promise((resolve) => {
-      chrome.runtime.sendMessage({ action: 'getCurrentTrack' }, (response) => {
-        if (chrome.runtime.lastError) {
-          recordTest('API getCurrentTrack', false, `Error: ${chrome.runtime.lastError.message}`);
-          resolve({ success: false, error: chrome.runtime.lastError.message });
-          return;
-        }
+    const response = await sendMessage({ action: 'getCurrentTrack' });
 
-        if (response?.success && response.track) {
-          const track = response.track;
-          recordTest('API getCurrentTrack', true,
-            `Track: "${track.name}" by ${track.artist} (ID: ${track.id})`);
-          recordTest('API Track has ID', !!track.id, `ID: ${track.id}`);
-          recordTest('API Track has duration', track.duration_ms > 0, `Duration: ${track.duration_ms}ms`);
-          recordTest('API Track has progress', track.progress_ms >= 0, `Progress: ${track.progress_ms}ms`);
-          resolve({ success: true, track });
-        } else {
-          recordTest('API getCurrentTrack', false,
-            `Response: ${JSON.stringify(response)}`);
-          resolve({ success: false, response });
-        }
-      });
-    });
+    if (response?.success && response.track) {
+      const track = response.track;
+      recordTest('API getCurrentTrack', true,
+        `Track: "${track.name}" by ${track.artist} (ID: ${track.id})`);
+      recordTest('API Track has ID', !!track.id, `ID: ${track.id}`);
+      recordTest('API Track has duration', track.duration_ms > 0, `Duration: ${track.duration_ms}ms`);
+      recordTest('API Track has progress', track.progress_ms >= 0, `Progress: ${track.progress_ms}ms`);
+      return { success: true, track };
+    } else {
+      recordTest('API getCurrentTrack', false, `Response: ${JSON.stringify(response)}`);
+      return { success: false, response };
+    }
   }
 
   // ============================================
@@ -119,37 +140,29 @@
   async function testAPIGetQueue() {
     log('Testing API getQueue...', 'test');
 
-    return new Promise((resolve) => {
-      chrome.runtime.sendMessage({ action: 'getQueue' }, (response) => {
-        if (chrome.runtime.lastError) {
-          recordTest('API getQueue', false, `Error: ${chrome.runtime.lastError.message}`);
-          resolve({ success: false, error: chrome.runtime.lastError.message });
-          return;
-        }
+    const response = await sendMessage({ action: 'getQueue' });
 
-        if (response?.success && response.queue) {
-          const queue = response.queue;
-          const queueLength = queue.queue?.length || 0;
-          recordTest('API getQueue', true, `Queue has ${queueLength} tracks`);
+    if (response?.success && response.queue) {
+      const queue = response.queue;
+      const queueLength = queue.queue?.length || 0;
+      recordTest('API getQueue', true, `Queue has ${queueLength} tracks`);
 
-          if (queue.currently_playing) {
-            recordTest('API Queue has currently_playing', true,
-              `Current: ${queue.currently_playing.name}`);
-          } else {
-            recordTest('API Queue has currently_playing', false, 'No currently_playing');
-          }
+      if (queue.currently_playing) {
+        recordTest('API Queue has currently_playing', true,
+          `Current: ${queue.currently_playing.name}`);
+      } else {
+        recordTest('API Queue has currently_playing', false, 'No currently_playing');
+      }
 
-          if (queueLength > 0) {
-            log(`Queue tracks: ${queue.queue.slice(0, 3).map(t => t.name).join(', ')}...`, 'info');
-          }
+      if (queueLength > 0) {
+        log(`Queue tracks: ${queue.queue.slice(0, 3).map(t => t.name).join(', ')}...`, 'info');
+      }
 
-          resolve({ success: true, queue });
-        } else {
-          recordTest('API getQueue', false, `Response: ${JSON.stringify(response)}`);
-          resolve({ success: false, response });
-        }
-      });
-    });
+      return { success: true, queue };
+    } else {
+      recordTest('API getQueue', false, `Response: ${JSON.stringify(response)}`);
+      return { success: false, response };
+    }
   }
 
   // ============================================
@@ -159,32 +172,24 @@
     log('Testing API seek capability (checking auth)...', 'test');
 
     // First get current track to know current position
-    const trackResult = await testAPIGetCurrentTrack();
-    if (!trackResult.success) {
+    const trackResponse = await sendMessage({ action: 'getCurrentTrack' });
+    if (!trackResponse?.success || !trackResponse.track) {
       recordTest('API Seek Pre-check', false, 'Cannot test seek - no track playing');
       return { success: false };
     }
 
     // We'll do a "safe" seek - seek to current position (no audible change)
-    const currentPos = trackResult.track.progress_ms;
+    const currentPos = trackResponse.track.progress_ms;
 
-    return new Promise((resolve) => {
-      chrome.runtime.sendMessage({ action: 'seekToPosition', positionMs: currentPos }, (response) => {
-        if (chrome.runtime.lastError) {
-          recordTest('API Seek', false, `Error: ${chrome.runtime.lastError.message}`);
-          resolve({ success: false, error: chrome.runtime.lastError.message });
-          return;
-        }
+    const response = await sendMessage({ action: 'seekToPosition', positionMs: currentPos });
 
-        if (response?.success) {
-          recordTest('API Seek', true, `Seek to ${currentPos}ms successful`);
-          resolve({ success: true });
-        } else {
-          recordTest('API Seek', false, `Response: ${JSON.stringify(response)}`);
-          resolve({ success: false, response });
-        }
-      });
-    });
+    if (response?.success) {
+      recordTest('API Seek', true, `Seek to ${currentPos}ms successful`);
+      return { success: true };
+    } else {
+      recordTest('API Seek', false, `Response: ${JSON.stringify(response)}`);
+      return { success: false, response };
+    }
   }
 
   // ============================================
@@ -193,33 +198,25 @@
   async function testGroovyDataFetch(trackId) {
     log(`Testing groovy data fetch for track: ${trackId}...`, 'test');
 
-    return new Promise((resolve) => {
-      chrome.runtime.sendMessage({ action: 'getGroovyData', trackId }, (response) => {
-        if (chrome.runtime.lastError) {
-          recordTest('Backend getGroovyData', false, `Error: ${chrome.runtime.lastError.message}`);
-          resolve({ success: false, error: chrome.runtime.lastError.message });
-          return;
-        }
+    const response = await sendMessage({ action: 'getGroovyData', trackId });
 
-        if (response?.success) {
-          if (response.groovyData) {
-            const data = response.groovyData;
-            recordTest('Backend getGroovyData', true,
-              `Found: intime=${data.intime}ms, outtime=${data.outtime}ms`);
-            recordTest('Groovy intime valid', data.intime >= 0, `intime: ${data.intime}`);
-            recordTest('Groovy outtime valid', data.outtime > data.intime,
-              `outtime: ${data.outtime} > intime: ${data.intime}`);
-            resolve({ success: true, hasData: true, data });
-          } else {
-            recordTest('Backend getGroovyData', true, 'No groovy data for this track (expected for many tracks)');
-            resolve({ success: true, hasData: false });
-          }
-        } else {
-          recordTest('Backend getGroovyData', false, `Response: ${JSON.stringify(response)}`);
-          resolve({ success: false, response });
-        }
-      });
-    });
+    if (response?.success) {
+      if (response.groovyData) {
+        const data = response.groovyData;
+        recordTest('Backend getGroovyData', true,
+          `Found: intime=${data.intime}ms, outtime=${data.outtime}ms`);
+        recordTest('Groovy intime valid', data.intime >= 0, `intime: ${data.intime}`);
+        recordTest('Groovy outtime valid', data.outtime > data.intime,
+          `outtime: ${data.outtime} > intime: ${data.intime}`);
+        return { success: true, hasData: true, data };
+      } else {
+        recordTest('Backend getGroovyData', true, 'No groovy data for this track (expected for many tracks)');
+        return { success: true, hasData: false };
+      }
+    } else {
+      recordTest('Backend getGroovyData', false, `Response: ${JSON.stringify(response)}`);
+      return { success: false, response };
+    }
   }
 
   // ============================================
@@ -228,24 +225,16 @@
   async function testAuthentication() {
     log('Testing authentication status...', 'test');
 
-    return new Promise((resolve) => {
-      chrome.runtime.sendMessage({ action: 'isLoggedIn' }, (response) => {
-        if (chrome.runtime.lastError) {
-          recordTest('Authentication Check', false, `Error: ${chrome.runtime.lastError.message}`);
-          resolve({ success: false, error: chrome.runtime.lastError.message });
-          return;
-        }
+    const response = await sendMessage({ action: 'isLoggedIn' });
 
-        if (response?.success) {
-          recordTest('Authentication Check', response.loggedIn,
-            response.loggedIn ? 'User is logged in' : 'User is NOT logged in');
-          resolve({ success: true, loggedIn: response.loggedIn });
-        } else {
-          recordTest('Authentication Check', false, `Response: ${JSON.stringify(response)}`);
-          resolve({ success: false, response });
-        }
-      });
-    });
+    if (response?.success) {
+      recordTest('Authentication Check', response.loggedIn,
+        response.loggedIn ? 'User is logged in' : 'User is NOT logged in');
+      return { success: true, loggedIn: response.loggedIn };
+    } else {
+      recordTest('Authentication Check', false, `Response: ${JSON.stringify(response)}`);
+      return { success: false, response };
+    }
   }
 
   // ============================================
@@ -254,29 +243,21 @@
   async function testContentScriptStatus() {
     log('Testing content script status...', 'test');
 
-    return new Promise((resolve) => {
-      chrome.runtime.sendMessage({ action: 'getStatus' }, (response) => {
-        if (chrome.runtime.lastError) {
-          recordTest('Content Script Status', false, `Error: ${chrome.runtime.lastError.message}`);
-          resolve({ success: false, error: chrome.runtime.lastError.message });
-          return;
-        }
+    const response = await sendMessage({ action: 'getStatus' });
 
-        if (response?.success && response.status) {
-          const status = response.status;
-          recordTest('Content Script Status', true, `Enabled: ${status.enabled}`);
-          recordTest('Content Script has trackId', !!status.currentTrackId,
-            `TrackId: ${status.currentTrackId}`);
-          recordTest('Content Script groovyData', true,
-            status.hasGroovyData ? `Has groovy data` : 'No groovy data');
-          log(`Full status: ${JSON.stringify(status, null, 2)}`, 'info');
-          resolve({ success: true, status });
-        } else {
-          recordTest('Content Script Status', false, `Response: ${JSON.stringify(response)}`);
-          resolve({ success: false, response });
-        }
-      });
-    });
+    if (response?.success && response.status) {
+      const status = response.status;
+      recordTest('Content Script Status', true, `Enabled: ${status.enabled}`);
+      recordTest('Content Script has trackId', !!status.currentTrackId,
+        `TrackId: ${status.currentTrackId}`);
+      recordTest('Content Script groovyData', true,
+        status.hasGroovyData ? `Has groovy data` : 'No groovy data');
+      log(`Full status: ${JSON.stringify(status, null, 2)}`, 'info');
+      return { success: true, status };
+    } else {
+      recordTest('Content Script Status', false, `Response: ${JSON.stringify(response)}`);
+      return { success: false, response };
+    }
   }
 
   // ============================================
@@ -286,11 +267,7 @@
     log('Testing progress comparison (DOM vs API)...', 'test');
 
     const domResult = await testDOMProgress();
-    const apiResult = await new Promise((resolve) => {
-      chrome.runtime.sendMessage({ action: 'getCurrentTrack' }, (response) => {
-        resolve(response);
-      });
-    });
+    const apiResult = await sendMessage({ action: 'getCurrentTrack' });
 
     if (domResult.success && apiResult?.success && apiResult.track) {
       const domMs = domResult.ms;
@@ -350,9 +327,7 @@
     log('Testing groovy logic simulation...', 'test');
 
     // Get current track
-    const trackResult = await new Promise((resolve) => {
-      chrome.runtime.sendMessage({ action: 'getCurrentTrack' }, resolve);
-    });
+    const trackResult = await sendMessage({ action: 'getCurrentTrack' });
 
     if (!trackResult?.success || !trackResult.track) {
       recordTest('Groovy Logic Simulation', false, 'No track playing');
@@ -363,9 +338,7 @@
     const progress = track.progress_ms;
 
     // Get groovy data
-    const groovyResult = await new Promise((resolve) => {
-      chrome.runtime.sendMessage({ action: 'getGroovyData', trackId: track.id }, resolve);
-    });
+    const groovyResult = await sendMessage({ action: 'getGroovyData', trackId: track.id });
 
     if (!groovyResult?.success) {
       recordTest('Groovy Logic Simulation', false, 'Failed to fetch groovy data');
@@ -400,7 +373,13 @@
   async function runAllTests() {
     console.clear();
     log(`Groovy Extension Evaluation v${EVAL_VERSION}`, 'info');
-    log('=' .repeat(50), 'info');
+    log('='.repeat(50), 'info');
+
+    // Check extension validity first
+    if (!isExtensionValid()) {
+      log('Extension context invalidated - please refresh the page', 'fail');
+      return { error: 'Extension context invalidated' };
+    }
 
     // Reset results
     testResults.passed = 0;
@@ -454,7 +433,7 @@
     console.log('');
 
     // Summary
-    log('=' .repeat(50), 'info');
+    log('='.repeat(50), 'info');
     log(`SUMMARY: ${testResults.passed} passed, ${testResults.failed} failed`,
       testResults.failed === 0 ? 'pass' : 'fail');
 
@@ -488,6 +467,11 @@
 
     // Quick diagnostic
     quick: async function() {
+      if (!isExtensionValid()) {
+        log('Extension context invalidated - please refresh the page', 'fail');
+        return { error: 'Extension context invalidated' };
+      }
+
       log('Quick Diagnostic...', 'info');
       const auth = await testAuthentication();
       const dom = await testDOMProgress();
@@ -505,9 +489,9 @@
     // Test a specific track's groovy data
     testTrackGroovy: async function(trackId) {
       if (!trackId) {
-        const track = await testAPIGetCurrentTrack();
-        if (track.success) {
-          trackId = track.track.id;
+        const response = await sendMessage({ action: 'getCurrentTrack' });
+        if (response?.success && response.track) {
+          trackId = response.track.id;
         } else {
           log('No track ID provided and no track playing', 'fail');
           return;
@@ -519,42 +503,33 @@
     // Manual seek test (will actually seek!)
     manualSeekTest: async function(positionMs) {
       log(`Manual seek test to ${positionMs}ms...`, 'warn');
-      return new Promise((resolve) => {
-        chrome.runtime.sendMessage({ action: 'seekToPosition', positionMs }, (response) => {
-          if (response?.success) {
-            log(`Seek to ${positionMs}ms successful!`, 'pass');
-          } else {
-            log(`Seek failed: ${JSON.stringify(response)}`, 'fail');
-          }
-          resolve(response);
-        });
-      });
+      const response = await sendMessage({ action: 'seekToPosition', positionMs });
+      if (response?.success) {
+        log(`Seek to ${positionMs}ms successful!`, 'pass');
+      } else {
+        log(`Seek failed: ${JSON.stringify(response)}`, 'fail');
+      }
+      return response;
     },
 
     // Manual skip test (will actually skip!)
     manualSkipTest: async function() {
       log('Manual skip test...', 'warn');
-      return new Promise((resolve) => {
-        chrome.runtime.sendMessage({ action: 'skipToNext' }, (response) => {
-          if (response?.success) {
-            log('Skip successful!', 'pass');
-          } else {
-            log(`Skip failed: ${JSON.stringify(response)}`, 'fail');
-          }
-          resolve(response);
-        });
-      });
+      const response = await sendMessage({ action: 'skipToNext' });
+      if (response?.success) {
+        log('Skip successful!', 'pass');
+      } else {
+        log(`Skip failed: ${JSON.stringify(response)}`, 'fail');
+      }
+      return response;
     },
 
     // Force reinitialize
     reinit: async function() {
       log('Forcing reinitialize...', 'info');
-      return new Promise((resolve) => {
-        chrome.runtime.sendMessage({ action: 'reinitialize' }, (response) => {
-          log(`Reinitialize: ${JSON.stringify(response)}`, response?.success ? 'pass' : 'fail');
-          resolve(response);
-        });
-      });
+      const response = await sendMessage({ action: 'reinitialize' });
+      log(`Reinitialize: ${JSON.stringify(response)}`, response?.success ? 'pass' : 'fail');
+      return response;
     },
 
     help: function() {

@@ -4,6 +4,40 @@
 (function() {
   'use strict';
 
+  // Check if extension context is valid
+  function isExtensionValid() {
+    try {
+      return chrome.runtime && chrome.runtime.id;
+    } catch (e) {
+      return false;
+    }
+  }
+
+  // Safe message sender that handles invalidated context
+  function sendMessage(message) {
+    return new Promise((resolve) => {
+      if (!isExtensionValid()) {
+        console.warn('Groovy: Extension context invalidated - please refresh the page');
+        resolve({ success: false, error: 'Extension context invalidated' });
+        return;
+      }
+
+      try {
+        chrome.runtime.sendMessage(message, (response) => {
+          if (chrome.runtime.lastError) {
+            console.warn('Groovy: Message error:', chrome.runtime.lastError.message);
+            resolve({ success: false, error: chrome.runtime.lastError.message });
+          } else {
+            resolve(response || { success: false, error: 'No response' });
+          }
+        });
+      } catch (e) {
+        console.warn('Groovy: Extension context invalidated - please refresh the page');
+        resolve({ success: false, error: 'Extension context invalidated' });
+      }
+    });
+  }
+
   // State
   let isEnabled = true;
   let currentTrackId = null;
@@ -61,59 +95,32 @@
 
   // API: Get current track
   async function apiGetCurrentTrack() {
-    return new Promise((resolve) => {
-      chrome.runtime.sendMessage({ action: 'getCurrentTrack' }, (response) => {
-        if (response?.success && response.track) {
-          resolve(response.track);
-        } else {
-          resolve(null);
-        }
-      });
-    });
+    const response = await sendMessage({ action: 'getCurrentTrack' });
+    return (response?.success && response.track) ? response.track : null;
   }
 
   // API: Get queue
   async function apiGetQueue() {
-    return new Promise((resolve) => {
-      chrome.runtime.sendMessage({ action: 'getQueue' }, (response) => {
-        if (response?.success && response.queue) {
-          resolve(response.queue);
-        } else {
-          resolve(null);
-        }
-      });
-    });
+    const response = await sendMessage({ action: 'getQueue' });
+    return (response?.success && response.queue) ? response.queue : null;
   }
 
   // API: Seek to position
   async function apiSeek(positionMs) {
-    return new Promise((resolve) => {
-      chrome.runtime.sendMessage({ action: 'seekToPosition', positionMs }, (response) => {
-        resolve(response?.success || false);
-      });
-    });
+    const response = await sendMessage({ action: 'seekToPosition', positionMs });
+    return response?.success || false;
   }
 
   // API: Skip to next track
   async function apiSkipToNext() {
-    return new Promise((resolve) => {
-      chrome.runtime.sendMessage({ action: 'skipToNext' }, (response) => {
-        resolve(response?.success || false);
-      });
-    });
+    const response = await sendMessage({ action: 'skipToNext' });
+    return response?.success || false;
   }
 
   // Fetch groovy data for a track
   async function fetchGroovyData(trackId) {
-    return new Promise((resolve) => {
-      chrome.runtime.sendMessage({ action: 'getGroovyData', trackId }, (response) => {
-        if (response?.success && response.groovyData) {
-          resolve(response.groovyData);
-        } else {
-          resolve(null);
-        }
-      });
-    });
+    const response = await sendMessage({ action: 'getGroovyData', trackId });
+    return (response?.success && response.groovyData) ? response.groovyData : null;
   }
 
   // Fetch groovy data for all tracks in queue and cache it
@@ -321,6 +328,13 @@
   async function monitoringLoop() {
     if (!isEnabled) return;
 
+    // Stop monitoring if extension context is invalidated
+    if (!isExtensionValid()) {
+      console.warn('Groovy: Extension context invalidated - stopping monitoring');
+      stopMonitoring();
+      return;
+    }
+
     await monitorProgress();
     await refreshQueuePeriodically();
   }
@@ -371,61 +385,79 @@
   }
 
   // Listen for messages from popup/background
-  chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
-    switch (request.action) {
-      case 'setEnabled':
-        setEnabled(request.enabled);
-        sendResponse({ success: true, enabled: isEnabled });
-        break;
+  if (isExtensionValid()) {
+    chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+      if (!isExtensionValid()) {
+        sendResponse({ success: false, error: 'Extension context invalidated' });
+        return true;
+      }
 
-      case 'getStatus':
-        sendResponse({ success: true, status: getStatus() });
-        break;
+      switch (request.action) {
+        case 'setEnabled':
+          setEnabled(request.enabled);
+          sendResponse({ success: true, enabled: isEnabled });
+          break;
 
-      case 'skipToIntime':
-        if (currentGroovyData) {
-          apiSeek(currentGroovyData.intime).then(success => {
-            sendResponse({ success });
+        case 'getStatus':
+          sendResponse({ success: true, status: getStatus() });
+          break;
+
+        case 'skipToIntime':
+          if (currentGroovyData) {
+            apiSeek(currentGroovyData.intime).then(success => {
+              sendResponse({ success });
+            });
+            return true; // Async response
+          } else {
+            sendResponse({ success: false, error: 'No groovy data' });
+          }
+          break;
+
+        case 'skipToNext':
+          handleSkipToNext().then(() => {
+            sendResponse({ success: true });
           });
           return true; // Async response
-        } else {
-          sendResponse({ success: false, error: 'No groovy data' });
-        }
-        break;
 
-      case 'skipToNext':
-        handleSkipToNext().then(() => {
-          sendResponse({ success: true });
-        });
-        return true; // Async response
+        case 'reinitialize':
+          isProcessing = false;
+          initializeCycle().then(() => {
+            sendResponse({ success: true });
+          });
+          return true; // Async response
 
-      case 'reinitialize':
-        isProcessing = false;
-        initializeCycle().then(() => {
-          sendResponse({ success: true });
-        });
-        return true; // Async response
+        case 'getCurrentPlaybackInfo':
+          sendResponse({
+            success: true,
+            trackId: currentTrackId,
+            currentTime: getProgressFromDOM(),
+            duration: currentTrackDuration
+          });
+          break;
 
-      case 'getCurrentPlaybackInfo':
-        sendResponse({
-          success: true,
-          trackId: currentTrackId,
-          currentTime: getProgressFromDOM(),
-          duration: currentTrackDuration
-        });
-        break;
+        default:
+          sendResponse({ success: false, error: 'Unknown action' });
+      }
 
-      default:
-        sendResponse({ success: false, error: 'Unknown action' });
-    }
-
-    return true;
-  });
+      return true;
+    });
+  }
 
   // Initialize when DOM is ready
   async function initialize() {
+    if (!isExtensionValid()) {
+      console.warn('Groovy: Extension context invalid at initialization');
+      return;
+    }
+
     // Wait for Spotify player to load
     const checkPlayer = setInterval(async () => {
+      if (!isExtensionValid()) {
+        clearInterval(checkPlayer);
+        console.warn('Groovy: Extension context invalidated during init');
+        return;
+      }
+
       const progressBar = document.querySelector(SELECTORS.progressBar) ||
                          document.querySelector(SELECTORS.currentTime);
 
@@ -433,14 +465,19 @@
         clearInterval(checkPlayer);
         console.log('Groovy: Spotify player detected');
 
-        // Load enabled state from storage
-        const { groovy_enabled } = await chrome.storage.local.get('groovy_enabled');
-        const enabled = groovy_enabled !== false; // Default to true
+        try {
+          // Load enabled state from storage
+          const { groovy_enabled } = await chrome.storage.local.get('groovy_enabled');
+          const enabled = groovy_enabled !== false; // Default to true
 
-        if (enabled) {
+          if (enabled) {
+            setEnabled(true);
+          } else {
+            setEnabled(false);
+          }
+        } catch (e) {
+          console.warn('Groovy: Could not load settings, defaulting to enabled');
           setEnabled(true);
-        } else {
-          setEnabled(false);
         }
       }
     }, 1000);
