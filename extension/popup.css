@@ -1,4 +1,34 @@
-/* Groovy Spotify Extension - Popup Styles */
+/* Groovy Spotify Extension - Harmony Theme */
+/* Design: Glassmorphism + Immersive Minimalism */
+
+/* CSS Variables / Design Tokens */
+:root {
+  /* Backgrounds */
+  --bg-base: #121212;
+  --bg-card: #181818;
+  --bg-glass: rgba(255, 255, 255, 0.05);
+  --bg-input: rgba(255, 255, 255, 0.08);
+
+  /* Accents */
+  --spotify-green: #1DB954;
+  --spotify-green-light: #1ed760;
+  --harmony-gradient: linear-gradient(90deg, #1DB954, #1ed760);
+
+  /* Text */
+  --text-primary: #ffffff;
+  --text-secondary: #b3b3b3;
+  --text-muted: #666666;
+
+  /* Effects */
+  --border-subtle: 1px solid rgba(255, 255, 255, 0.1);
+  --shadow-card: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+  --shadow-album: 0 8px 24px rgba(0, 0, 0, 0.4);
+
+  /* Transitions */
+  --transition-fast: 0.15s ease;
+  --transition-normal: 0.2s ease;
+  --transition-smooth: 0.3s ease;
+}
 
 * {
   margin: 0;
@@ -7,16 +37,21 @@
 }
 
 body {
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
-  background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
-  color: #ffffff;
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  background: var(--bg-base);
+  color: var(--text-primary);
   width: 360px;
   min-height: 200px;
   overflow-x: hidden;
 }
 
+/* Glassmorphism Container */
 .container {
-  padding: 16px;
+  padding: 20px;
+  background: var(--bg-base);
+  backdrop-filter: blur(12px);
+  border: var(--border-subtle);
+  min-height: 100%;
 }
 
 /* Header */
@@ -26,27 +61,28 @@ body {
   gap: 12px;
   margin-bottom: 20px;
   padding-bottom: 16px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  border-bottom: var(--border-subtle);
 }
 
 .logo {
-  width: 40px;
-  height: 40px;
+  width: 36px;
+  height: 36px;
   border-radius: 8px;
 }
 
 .header h1 {
-  font-size: 24px;
+  font-size: 22px;
   font-weight: 700;
-  background: linear-gradient(90deg, #1DB954, #1ed760);
+  background: var(--harmony-gradient);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
+  letter-spacing: -0.02em;
 }
 
 /* Sections */
 .section {
-  animation: fadeIn 0.3s ease;
+  animation: fadeIn var(--transition-smooth);
 }
 
 .section.hidden {
@@ -54,15 +90,15 @@ body {
 }
 
 @keyframes fadeIn {
-  from { opacity: 0; transform: translateY(10px); }
+  from { opacity: 0; transform: translateY(8px); }
   to { opacity: 1; transform: translateY(0); }
 }
 
 /* Description */
 .description {
-  color: #b3b3b3;
+  color: var(--text-secondary);
   font-size: 14px;
-  line-height: 1.5;
+  line-height: 1.6;
   margin-bottom: 20px;
 }
 
@@ -72,22 +108,23 @@ body {
   align-items: center;
   justify-content: center;
   gap: 8px;
-  padding: 12px 20px;
+  padding: 12px 24px;
   border: none;
-  border-radius: 24px;
+  border-radius: 9999px;
   font-size: 14px;
   font-weight: 600;
   cursor: pointer;
-  transition: all 0.2s ease;
+  transition: all var(--transition-normal);
+  font-family: inherit;
 }
 
 .btn-primary {
-  background: #1DB954;
+  background: var(--spotify-green);
   color: #000000;
 }
 
 .btn-primary:hover {
-  background: #1ed760;
+  background: var(--spotify-green-light);
   transform: scale(1.02);
 }
 
@@ -95,18 +132,10 @@ body {
   transform: scale(0.98);
 }
 
-.btn-small {
-  padding: 8px 10px;
-  font-size: 11px;
-  border-radius: 8px;
-  background: rgba(29, 185, 84, 0.3);
-  color: #1DB954;
-  white-space: nowrap;
-  flex-shrink: 0;
-}
-
-.btn-small:hover {
-  background: rgba(29, 185, 84, 0.5);
+.btn-primary:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+  transform: none;
 }
 
 .btn-full {
@@ -115,12 +144,38 @@ body {
 
 .btn-text {
   background: transparent;
-  color: #b3b3b3;
-  padding: 8px;
+  color: var(--text-muted);
+  padding: 8px 16px;
+  font-weight: 500;
 }
 
 .btn-text:hover {
-  color: #ffffff;
+  color: var(--text-primary);
+}
+
+/* Icon Button (for time inputs) */
+.btn-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border: none;
+  border-radius: 50%;
+  background: var(--bg-glass);
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+  flex-shrink: 0;
+}
+
+.btn-icon:hover {
+  background: rgba(29, 185, 84, 0.2);
+  color: var(--spotify-green);
+}
+
+.btn-icon:active {
+  transform: scale(0.95);
 }
 
 .spotify-icon {
@@ -129,42 +184,32 @@ body {
   fill: currentColor;
 }
 
-/* Toggles Container - Side by Side */
+/* Toggles Container - Compact Pills */
 .toggles-container {
   display: flex;
-  gap: 16px;
+  gap: 20px;
   padding: 12px 0;
   margin-bottom: 16px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  border-bottom: var(--border-subtle);
 }
 
 .toggle-item {
   display: flex;
   align-items: center;
-  gap: 8px;
-  flex: 1;
+  gap: 10px;
 }
 
 .toggle-item span {
   font-size: 13px;
-  color: #b3b3b3;
-  white-space: nowrap;
+  font-weight: 500;
+  color: var(--text-secondary);
 }
 
-/* Toggle */
-.toggle-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 12px 0;
-  margin-bottom: 16px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
-}
-
+/* Toggle Switch - Compact Pill */
 .toggle {
   position: relative;
-  width: 48px;
-  height: 26px;
+  width: 40px;
+  height: 22px;
 }
 
 .toggle input {
@@ -180,51 +225,60 @@ body {
   left: 0;
   right: 0;
   bottom: 0;
-  background-color: #404040;
-  border-radius: 26px;
-  transition: 0.3s;
+  background-color: rgba(255, 255, 255, 0.1);
+  border-radius: 11px;
+  transition: var(--transition-smooth);
 }
 
 .toggle-slider:before {
   position: absolute;
   content: "";
-  height: 20px;
-  width: 20px;
+  height: 16px;
+  width: 16px;
   left: 3px;
   bottom: 3px;
-  background-color: white;
+  background-color: var(--text-secondary);
   border-radius: 50%;
-  transition: 0.3s;
+  transition: var(--transition-smooth);
 }
 
 .toggle input:checked + .toggle-slider {
-  background-color: #1DB954;
+  background-color: var(--spotify-green);
 }
 
 .toggle input:checked + .toggle-slider:before {
-  transform: translateX(22px);
+  transform: translateX(18px);
+  background-color: #000;
+}
+
+/* Track Card with Depth */
+.track-card {
+  background: var(--bg-card);
+  border-radius: 12px;
+  padding: 16px;
+  margin-bottom: 16px;
+  box-shadow: var(--shadow-card);
+  border: var(--border-subtle);
 }
 
 /* Track Info */
 .track-info {
-  background: rgba(255, 255, 255, 0.05);
-  border-radius: 12px;
-  padding: 16px;
-  margin-bottom: 16px;
+  min-height: 64px;
 }
 
 .track-loading {
   display: flex;
   align-items: center;
   gap: 12px;
-  color: #b3b3b3;
+  color: var(--text-secondary);
+  font-size: 13px;
 }
 
 .spinner {
   width: 20px;
   height: 20px;
-  border: 2px solid rgba(255, 255, 255, 0.1);
-  border-top-color: #1DB954;
+  border: 2px solid var(--bg-glass);
+  border-top-color: var(--spotify-green);
   border-radius: 50%;
   animation: spin 1s linear infinite;
 }
@@ -235,33 +289,38 @@ body {
 
 .track-details {
   display: flex;
-  gap: 12px;
+  gap: 14px;
 }
 
 .track-image {
-  width: 56px;
-  height: 56px;
-  border-radius: 4px;
+  width: 64px;
+  height: 64px;
+  border-radius: 8px;
   object-fit: cover;
+  box-shadow: var(--shadow-album);
 }
 
 .track-text {
   flex: 1;
   min-width: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
 }
 
 .track-name {
-  font-size: 14px;
+  font-size: 15px;
   font-weight: 600;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
   margin-bottom: 4px;
+  letter-spacing: -0.01em;
 }
 
 .track-artist {
-  font-size: 12px;
-  color: #b3b3b3;
+  font-size: 13px;
+  color: var(--text-secondary);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -269,14 +328,70 @@ body {
 
 .track-duration {
   font-size: 11px;
-  color: #666;
+  color: var(--text-muted);
   margin-top: 4px;
+  font-variant-numeric: tabular-nums;
 }
 
 .no-track {
-  color: #b3b3b3;
+  color: var(--text-secondary);
   text-align: center;
-  padding: 8px 0;
+  padding: 16px 0;
+}
+
+.no-track p:first-child {
+  font-weight: 500;
+  margin-bottom: 4px;
+}
+
+.no-track p:last-child {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+/* Groovy Segment Bar */
+.groovy-bar-container {
+  margin-top: 16px;
+  padding-top: 14px;
+  border-top: var(--border-subtle);
+}
+
+.groovy-bar {
+  position: relative;
+  height: 6px;
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.groovy-segment {
+  position: absolute;
+  height: 100%;
+  background: var(--harmony-gradient);
+  border-radius: 3px;
+  transition: left var(--transition-normal), width var(--transition-normal);
+}
+
+.groovy-bar-labels {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-top: 8px;
+}
+
+.groovy-label {
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--spotify-green);
+  font-variant-numeric: tabular-nums;
+}
+
+.groovy-label-center {
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
 }
 
 /* Groovy Editor */
@@ -284,19 +399,19 @@ body {
   margin-bottom: 16px;
 }
 
-.groovy-editor h3,
-.existing-groovy h3 {
-  font-size: 14px;
+.groovy-editor h3 {
+  font-size: 13px;
   font-weight: 600;
-  margin-bottom: 12px;
-  color: #1DB954;
+  margin-bottom: 14px;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
 }
 
 .time-inputs {
   display: flex;
-  gap: 12px;
+  gap: 16px;
   margin-bottom: 16px;
-  width: 100%;
 }
 
 .time-input-group {
@@ -306,37 +421,43 @@ body {
 
 .time-input-group label {
   display: block;
-  font-size: 12px;
-  color: #b3b3b3;
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--text-muted);
   margin-bottom: 6px;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
 }
 
 .time-input-wrapper {
   display: flex;
-  gap: 4px;
+  gap: 6px;
   align-items: center;
 }
 
 .time-input {
-  width: 70px;
-  min-width: 70px;
-  padding: 10px 8px;
-  background: rgba(255, 255, 255, 0.1);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 8px;
-  color: #ffffff;
+  flex: 1;
+  min-width: 0;
+  padding: 10px 14px;
+  background: var(--bg-input);
+  border: var(--border-subtle);
+  border-radius: 9999px;
+  color: var(--text-primary);
   font-size: 14px;
-  font-family: 'SF Mono', Monaco, monospace;
+  font-family: 'Inter', monospace;
+  font-variant-numeric: tabular-nums;
   text-align: center;
+  transition: border-color var(--transition-fast), background var(--transition-fast);
 }
 
 .time-input:focus {
   outline: none;
-  border-color: #1DB954;
+  border-color: var(--spotify-green);
+  background: rgba(29, 185, 84, 0.1);
 }
 
 .time-input::placeholder {
-  color: #666;
+  color: var(--text-muted);
 }
 
 /* Status Message */
@@ -344,17 +465,18 @@ body {
   font-size: 12px;
   text-align: center;
   margin-top: 12px;
-  padding: 8px;
-  border-radius: 6px;
+  padding: 10px 14px;
+  border-radius: 8px;
+  font-weight: 500;
 }
 
 .status-message.success {
-  background: rgba(29, 185, 84, 0.2);
-  color: #1DB954;
+  background: rgba(29, 185, 84, 0.15);
+  color: var(--spotify-green);
 }
 
 .status-message.error {
-  background: rgba(255, 85, 85, 0.2);
+  background: rgba(255, 85, 85, 0.15);
   color: #ff5555;
 }
 
@@ -362,38 +484,12 @@ body {
   display: none;
 }
 
-/* Existing Groovy Data */
-.existing-groovy {
-  background: rgba(29, 185, 84, 0.1);
-  border: 1px solid rgba(29, 185, 84, 0.2);
-  border-radius: 12px;
-  padding: 16px;
-  margin-bottom: 16px;
-}
-
-.groovy-times {
-  display: flex;
-  justify-content: space-between;
-  font-size: 14px;
-  margin-bottom: 8px;
-}
-
-.groovy-times strong {
-  color: #1DB954;
-  font-family: 'SF Mono', Monaco, monospace;
-}
-
-.contribution-info {
-  font-size: 11px;
-  color: #666;
-}
-
 /* Logout */
 .logout-row {
   text-align: center;
   margin-top: 16px;
   padding-top: 16px;
-  border-top: 1px solid rgba(255, 255, 255, 0.1);
+  border-top: var(--border-subtle);
 }
 
 /* Status Bar */
@@ -402,12 +498,18 @@ body {
   bottom: 0;
   left: 0;
   right: 0;
-  padding: 8px 16px;
-  background: #1DB954;
+  padding: 10px 20px;
+  background: var(--spotify-green);
   color: #000;
   font-size: 12px;
-  font-weight: 500;
+  font-weight: 600;
   text-align: center;
+  animation: slideUp var(--transition-smooth);
+}
+
+@keyframes slideUp {
+  from { transform: translateY(100%); }
+  to { transform: translateY(0); }
 }
 
 .status-bar.hidden {

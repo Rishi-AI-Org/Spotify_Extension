@@ -9,17 +9,17 @@ document.addEventListener('DOMContentLoaded', async () => {
   const enableToggle = document.getElementById('enable-toggle');
   const autoskipToggle = document.getElementById('autoskip-toggle');
   const trackInfo = document.getElementById('track-info');
+  const groovyBarContainer = document.getElementById('groovy-bar-container');
+  const groovySegment = document.getElementById('groovy-segment');
+  const groovyStartLabel = document.getElementById('groovy-start-label');
+  const groovyEndLabel = document.getElementById('groovy-end-label');
   const groovyEditor = document.getElementById('groovy-editor');
-  const existingGroovy = document.getElementById('existing-groovy');
   const intimeInput = document.getElementById('intime-input');
   const outtimeInput = document.getElementById('outtime-input');
   const setIntimeBtn = document.getElementById('set-intime-btn');
   const setOuttimeBtn = document.getElementById('set-outtime-btn');
   const saveGroovyBtn = document.getElementById('save-groovy-btn');
   const groovyStatus = document.getElementById('groovy-status');
-  const existingIntime = document.getElementById('existing-intime');
-  const existingOuttime = document.getElementById('existing-outtime');
-  const contributionCount = document.getElementById('contribution-count');
   const statusBar = document.getElementById('status-bar');
   const statusText = document.getElementById('status-text');
 
@@ -132,6 +132,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         <span>Loading track info...</span>
       </div>
     `;
+    groovyBarContainer.classList.add('hidden');
 
     try {
       const response = await sendMessage({ action: 'getCurrentTrack' });
@@ -144,18 +145,18 @@ document.addEventListener('DOMContentLoaded', async () => {
         trackInfo.innerHTML = `
           <div class="no-track">
             <p>No track playing</p>
-            <p style="font-size: 11px; margin-top: 4px;">Play a song on Spotify Web Player</p>
+            <p>Play a song on Spotify Web Player</p>
           </div>
         `;
+        groovyBarContainer.classList.add('hidden');
         groovyEditor.classList.add('hidden');
-        existingGroovy.classList.add('hidden');
       }
     } catch (error) {
       console.error('Error loading track:', error);
       trackInfo.innerHTML = `
         <div class="no-track">
           <p>Error loading track</p>
-          <p style="font-size: 11px; margin-top: 4px;">${error.message}</p>
+          <p>${error.message}</p>
         </div>
       `;
     }
@@ -169,7 +170,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         <div class="track-text">
           <div class="track-name" title="${track.name}">${track.name}</div>
           <div class="track-artist" title="${track.artist}">${track.artist}</div>
-          <div class="track-duration">Duration: ${formatTime(track.duration_ms)}</div>
+          <div class="track-duration">${formatTime(track.duration_ms)}</div>
         </div>
       </div>
     `;
@@ -180,6 +181,26 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
   }
 
+  // Update groovy bar visualization
+  function updateGroovyBar(groovyData, duration) {
+    if (!groovyData || !duration) {
+      groovyBarContainer.classList.add('hidden');
+      return;
+    }
+
+    const startPercent = (groovyData.intime / duration) * 100;
+    const endPercent = (groovyData.outtime / duration) * 100;
+    const width = endPercent - startPercent;
+
+    groovySegment.style.left = `${startPercent}%`;
+    groovySegment.style.width = `${width}%`;
+
+    groovyStartLabel.textContent = formatTime(groovyData.intime);
+    groovyEndLabel.textContent = formatTime(groovyData.outtime);
+
+    groovyBarContainer.classList.remove('hidden');
+  }
+
   // Load groovy data for current track
   async function loadGroovyData(trackId) {
     try {
@@ -187,10 +208,10 @@ document.addEventListener('DOMContentLoaded', async () => {
 
       if (response.success && response.groovyData) {
         currentGroovyData = response.groovyData;
-        displayExistingGroovy(currentGroovyData);
+        updateGroovyBar(currentGroovyData, currentTrack.duration_ms);
       } else {
         currentGroovyData = null;
-        existingGroovy.classList.add('hidden');
+        groovyBarContainer.classList.add('hidden');
       }
 
       // Show editor
@@ -209,14 +230,6 @@ document.addEventListener('DOMContentLoaded', async () => {
     } catch (error) {
       console.error('Error loading groovy data:', error);
     }
-  }
-
-  // Display existing groovy data
-  function displayExistingGroovy(data) {
-    existingIntime.textContent = formatTime(data.intime);
-    existingOuttime.textContent = formatTime(data.outtime);
-    contributionCount.textContent = data.contribution_count || 1;
-    existingGroovy.classList.remove('hidden');
   }
 
   // Save groovy data
@@ -259,9 +272,9 @@ document.addEventListener('DOMContentLoaded', async () => {
       });
 
       if (response.success) {
-        showStatus('Groovy part saved! Thanks for contributing.', 'success');
+        showStatus('Groovy part saved!', 'success');
         currentGroovyData = response.data;
-        displayExistingGroovy(response.data);
+        updateGroovyBar(currentGroovyData, currentTrack.duration_ms);
 
         // Trigger prefetch to update cache
         sendMessage({ action: 'prefetchGroovyData' });
@@ -415,5 +428,5 @@ document.addEventListener('DOMContentLoaded', async () => {
     } finally {
       isRefreshing = false;
     }
-  }, 5000); // Check every 5 seconds instead of 2
+  }, 5000); // Check every 5 seconds
 });
