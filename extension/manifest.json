@@ -7,7 +7,6 @@
     "storage",
     "activeTab",
     "scripting",
-    "identity",
     "tabs"
   ],
   "host_permissions": [
@@ -37,6 +36,11 @@
     {
       "matches": ["https://open.spotify.com/*"],
       "js": ["content.js", "eval.js"],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": ["https://spotify-extension-backend.onrender.com/auth/callback*"],
+      "js": ["auth-callback.js"],
       "run_at": "document_idle"
     }
   ],

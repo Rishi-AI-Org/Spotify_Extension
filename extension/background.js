@@ -2,194 +2,63 @@
 // Handles Spotify API calls, token management, and groovy data prefetching
 
 const CONFIG = {
-  SPOTIFY_CLIENT_ID: 'a0e35b23c48f47e4be5e6790d3e476d5',
   BACKEND_URL: 'https://spotify-extension-backend.onrender.com',
-  SPOTIFY_API_BASE: 'https://api.spotify.com/v1',
-  SPOTIFY_AUTH_URL: 'https://accounts.spotify.com/authorize',
-  SPOTIFY_TOKEN_URL: 'https://accounts.spotify.com/api/token',
-  SCOPES: [
-    'user-read-playback-state',
-    'user-read-currently-playing',
-    'user-read-playback-position',
-    'user-modify-playback-state'
-  ].join(' ')
+  SPOTIFY_API_BASE: 'https://api.spotify.com/v1'
 };
 
-// Generate random string for OAuth state
-function generateRandomString(length) {
-  const possible = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
-  let text = '';
-  for (let i = 0; i < length; i++) {
-    text += possible.charAt(Math.floor(Math.random() * possible.length));
-  }
-  return text;
-}
-
-// Generate code verifier for PKCE
-function generateCodeVerifier() {
-  return generateRandomString(128);
-}
-
-// Generate code challenge from verifier for PKCE
-async function generateCodeChallenge(verifier) {
-  const encoder = new TextEncoder();
-  const data = encoder.encode(verifier);
-  const digest = await crypto.subtle.digest('SHA-256', data);
-  return btoa(String.fromCharCode(...new Uint8Array(digest)))
-    .replace(/\+/g, '-')
-    .replace(/\//g, '_')
-    .replace(/=+$/, '');
-}
-
-// Start Spotify OAuth login flow with PKCE
+// Start Spotify OAuth login flow via backend
 async function startSpotifyLogin() {
-  const codeVerifier = generateCodeVerifier();
-  const codeChallenge = await generateCodeChallenge(codeVerifier);
-  const state = generateRandomString(16);
-
-  // Store code verifier for later use
-  await chrome.storage.local.set({
-    spotify_code_verifier: codeVerifier,
-    spotify_auth_state: state
-  });
-
-  const redirectUri = chrome.identity.getRedirectURL();
-
-  const authUrl = new URL(CONFIG.SPOTIFY_AUTH_URL);
-  authUrl.searchParams.append('client_id', CONFIG.SPOTIFY_CLIENT_ID);
-  authUrl.searchParams.append('response_type', 'code');
-  authUrl.searchParams.append('redirect_uri', redirectUri);
-  authUrl.searchParams.append('scope', CONFIG.SCOPES);
-  authUrl.searchParams.append('state', state);
-  authUrl.searchParams.append('code_challenge_method', 'S256');
-  authUrl.searchParams.append('code_challenge', codeChallenge);
-
   return new Promise((resolve, reject) => {
-    chrome.identity.launchWebAuthFlow(
-      {
-        url: authUrl.toString(),
-        interactive: true
-      },
-      async (redirectUrl) => {
-        if (chrome.runtime.lastError) {
-          reject(new Error(chrome.runtime.lastError.message));
-          return;
-        }
+    // Open backend login page in a new tab
+    const loginUrl = `${CONFIG.BACKEND_URL}/auth/login`;
 
-        if (!redirectUrl) {
-          reject(new Error('No redirect URL received'));
-          return;
-        }
-
-        try {
-          const url = new URL(redirectUrl);
-          const code = url.searchParams.get('code');
-          const returnedState = url.searchParams.get('state');
-
-          // Verify state
-          const { spotify_auth_state } = await chrome.storage.local.get('spotify_auth_state');
-          if (returnedState !== spotify_auth_state) {
-            reject(new Error('State mismatch'));
-            return;
-          }
-
-          // Exchange code for token
-          const token = await exchangeCodeForToken(code, redirectUri);
-          resolve(token);
-        } catch (error) {
-          reject(error);
-        }
+    chrome.tabs.create({ url: loginUrl }, (tab) => {
+      if (chrome.runtime.lastError) {
+        reject(new Error(chrome.runtime.lastError.message));
+        return;
       }
-    );
+
+      // Store the tab ID so we can track when login completes
+      chrome.storage.local.set({ auth_tab_id: tab.id });
+
+      // The auth-callback.js content script will handle saving tokens
+      // and send a 'loginComplete' message when done
+      // We'll resolve this promise when that happens
+
+      // Set up a listener for login completion
+      const loginCompleteListener = (message, sender, sendResponse) => {
+        if (message.action === 'loginComplete') {
+          chrome.runtime.onMessage.removeListener(loginCompleteListener);
+          resolve({ success: true });
+          sendResponse({ received: true });
+        }
+      };
+
+      chrome.runtime.onMessage.addListener(loginCompleteListener);
+
+      // Timeout after 5 minutes
+      setTimeout(() => {
+        chrome.runtime.onMessage.removeListener(loginCompleteListener);
+        reject(new Error('Login timeout'));
+      }, 300000);
+    });
   });
-}
-
-// Exchange authorization code for access token using PKCE
-async function exchangeCodeForToken(code, redirectUri) {
-  const { spotify_code_verifier } = await chrome.storage.local.get('spotify_code_verifier');
-
-  const response = await fetch(CONFIG.SPOTIFY_TOKEN_URL, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/x-www-form-urlencoded',
-    },
-    body: new URLSearchParams({
-      client_id: CONFIG.SPOTIFY_CLIENT_ID,
-      grant_type: 'authorization_code',
-      code: code,
-      redirect_uri: redirectUri,
-      code_verifier: spotify_code_verifier
-    })
-  });
-
-  if (!response.ok) {
-    const error = await response.json();
-    throw new Error(error.error_description || 'Failed to exchange code for token');
-  }
-
-  const tokenData = await response.json();
-
-  // Store token with expiry time
-  const tokenWithExpiry = {
-    ...tokenData,
-    expires_at: Date.now() + (tokenData.expires_in * 1000)
-  };
-
-  await chrome.storage.local.set({ spotify_token: tokenWithExpiry });
-
-  // Clean up PKCE data
-  await chrome.storage.local.remove(['spotify_code_verifier', 'spotify_auth_state']);
-
-  return tokenWithExpiry;
-}
-
-// Refresh access token
-async function refreshAccessToken() {
-  const { spotify_token } = await chrome.storage.local.get('spotify_token');
-
-  if (!spotify_token?.refresh_token) {
-    throw new Error('No refresh token available');
-  }
-
-  const response = await fetch(CONFIG.SPOTIFY_TOKEN_URL, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/x-www-form-urlencoded',
-    },
-    body: new URLSearchParams({
-      client_id: CONFIG.SPOTIFY_CLIENT_ID,
-      grant_type: 'refresh_token',
-      refresh_token: spotify_token.refresh_token
-    })
-  });
-
-  if (!response.ok) {
-    throw new Error('Failed to refresh token');
-  }
-
-  const tokenData = await response.json();
-
-  const tokenWithExpiry = {
-    ...tokenData,
-    refresh_token: tokenData.refresh_token || spotify_token.refresh_token,
-    expires_at: Date.now() + (tokenData.expires_in * 1000)
-  };
-
-  await chrome.storage.local.set({ spotify_token: tokenWithExpiry });
-
-  return tokenWithExpiry;
 }
 
 // Get valid access token (refresh if needed)
 async function getValidToken() {
-  const { spotify_token } = await chrome.storage.local.get('spotify_token');
+  const data = await chrome.storage.local.get([
+    'spotify_access_token',
+    'spotify_refresh_token',
+    'spotify_token_expires_at'
+  ]);
 
-  if (!spotify_token) {
+  if (!data.spotify_access_token) {
     return null;
   }
 
   // Check if token is expired (with 5 minute buffer)
-  if (Date.now() >= spotify_token.expires_at - 300000) {
+  if (Date.now() >= data.spotify_token_expires_at - 300000) {
     try {
       return await refreshAccessToken();
     } catch (error) {
@@ -198,7 +67,50 @@ async function getValidToken() {
     }
   }
 
-  return spotify_token;
+  return {
+    access_token: data.spotify_access_token,
+    refresh_token: data.spotify_refresh_token,
+    expires_at: data.spotify_token_expires_at
+  };
+}
+
+// Refresh access token via backend
+async function refreshAccessToken() {
+  const { spotify_refresh_token } = await chrome.storage.local.get('spotify_refresh_token');
+
+  if (!spotify_refresh_token) {
+    throw new Error('No refresh token available');
+  }
+
+  const response = await fetch(`${CONFIG.BACKEND_URL}/auth/refresh`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({
+      refresh_token: spotify_refresh_token
+    })
+  });
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({}));
+    throw new Error(error.error || 'Failed to refresh token');
+  }
+
+  const tokenData = await response.json();
+
+  // Save new tokens
+  await chrome.storage.local.set({
+    spotify_access_token: tokenData.access_token,
+    spotify_refresh_token: tokenData.refresh_token || spotify_refresh_token,
+    spotify_token_expires_at: tokenData.expires_at
+  });
+
+  return {
+    access_token: tokenData.access_token,
+    refresh_token: tokenData.refresh_token || spotify_refresh_token,
+    expires_at: tokenData.expires_at
+  };
 }
 
 // Fetch current playing track from Spotify API
@@ -399,7 +311,13 @@ async function skipToNext() {
 
 // Logout - clear stored tokens
 async function logout() {
-  await chrome.storage.local.remove(['spotify_token', 'prefetched_groovy']);
+  await chrome.storage.local.remove([
+    'spotify_access_token',
+    'spotify_refresh_token',
+    'spotify_token_expires_at',
+    'prefetched_groovy',
+    'auth_tab_id'
+  ]);
 }
 
 // Check if user is logged in
@@ -414,8 +332,21 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     try {
       switch (request.action) {
         case 'login':
-          const token = await startSpotifyLogin();
-          return { success: true, token };
+          await startSpotifyLogin();
+          return { success: true };
+
+        case 'loginComplete':
+          // Close the auth tab if we know its ID
+          const { auth_tab_id } = await chrome.storage.local.get('auth_tab_id');
+          if (auth_tab_id) {
+            try {
+              await chrome.tabs.remove(auth_tab_id);
+            } catch (e) {
+              // Tab might already be closed
+            }
+            await chrome.storage.local.remove('auth_tab_id');
+          }
+          return { success: true };
 
         case 'logout':
           await logout();
