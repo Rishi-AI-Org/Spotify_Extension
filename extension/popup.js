@@ -202,7 +202,8 @@ document.addEventListener('DOMContentLoaded', async () => {
   }
 
   // Load groovy data for current track
-  async function loadGroovyData(trackId) {
+  // preserveInputs: if true, don't overwrite user's input values (used during auto-refresh)
+  async function loadGroovyData(trackId, preserveInputs = false) {
     try {
       const response = await sendMessage({ action: 'getGroovyData', trackId });
 
@@ -217,14 +218,16 @@ document.addEventListener('DOMContentLoaded', async () => {
       // Show editor
       groovyEditor.classList.remove('hidden');
 
-      // Pre-fill with existing data if available
-      if (currentGroovyData) {
-        intimeInput.value = formatTime(currentGroovyData.intime);
-        outtimeInput.value = formatTime(currentGroovyData.outtime);
-      } else {
-        intimeInput.value = '0:00';
-        if (currentTrack) {
-          outtimeInput.value = formatTime(currentTrack.duration_ms);
+      // Only set input values if NOT preserving existing user input
+      if (!preserveInputs) {
+        if (currentGroovyData) {
+          intimeInput.value = formatTime(currentGroovyData.intime);
+          outtimeInput.value = formatTime(currentGroovyData.outtime);
+        } else {
+          intimeInput.value = '0:00';
+          if (currentTrack) {
+            outtimeInput.value = formatTime(currentTrack.duration_ms);
+          }
         }
       }
     } catch (error) {
@@ -427,7 +430,27 @@ document.addEventListener('DOMContentLoaded', async () => {
     mainSection.classList.add('hidden');
   }
 
-  // Note: Removed auto-refresh interval as it was causing UI flicker and resetting user input.
-  // The popup now only loads track info once when opened.
-  // User can close and reopen popup to refresh track info.
+  // Refresh track info periodically - detect track changes
+  let isRefreshing = false;
+  setInterval(async () => {
+    if (isRefreshing || mainSection.classList.contains('hidden') || !currentTrack) return;
+
+    isRefreshing = true;
+    try {
+      const response = await sendToContentScript({ action: 'getCurrentPlaybackInfo' });
+      if (response.success && response.trackId && response.trackId !== currentTrack.id) {
+        // Track changed - update display but PRESERVE inputs
+        const trackResponse = await sendMessage({ action: 'getCurrentTrack' });
+        if (trackResponse.success && trackResponse.track) {
+          currentTrack = trackResponse.track;
+          displayTrackInfo(currentTrack);
+          await loadGroovyData(currentTrack.id, true); // preserveInputs = true
+        }
+      }
+    } catch (error) {
+      // Silently ignore errors during periodic refresh
+    } finally {
+      isRefreshing = false;
+    }
+  }, 5000);
 });

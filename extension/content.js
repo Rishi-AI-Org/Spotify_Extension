@@ -487,22 +487,19 @@
 
       if (progressBar) {
         clearInterval(checkPlayer);
-        console.log('Groovy: Spotify player detected');
+        console.log('Groovy: Spotify player detected, waiting for full initialization...');
 
-        try {
-          // Load enabled state from storage
-          const { groovy_enabled } = await chrome.storage.local.get('groovy_enabled');
-          const enabled = groovy_enabled !== false; // Default to true
-
-          if (enabled) {
+        // Wait for Spotify player to fully initialize before attempting seek
+        setTimeout(async () => {
+          try {
+            const { groovy_enabled } = await chrome.storage.local.get('groovy_enabled');
+            const enabled = groovy_enabled !== false; // Default to true
+            setEnabled(enabled);
+          } catch (e) {
+            console.warn('Groovy: Could not load settings, defaulting to enabled');
             setEnabled(true);
-          } else {
-            setEnabled(false);
           }
-        } catch (e) {
-          console.warn('Groovy: Could not load settings, defaulting to enabled');
-          setEnabled(true);
-        }
+        }, 1500); // 1.5 second delay for player initialization
       }
     }, 1000);
 
