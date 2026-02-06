@@ -427,25 +427,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     mainSection.classList.add('hidden');
   }
 
-  // Refresh track info periodically when popup is open (only if track changes)
-  let isRefreshing = false;
-  setInterval(async () => {
-    // Prevent overlapping refreshes and only check if logged in
-    if (isRefreshing || mainSection.classList.contains('hidden') || !currentTrack) {
-      return;
-    }
-
-    isRefreshing = true;
-    try {
-      const response = await sendToContentScript({ action: 'getCurrentPlaybackInfo' });
-      // Only reload if we got a valid response with a DIFFERENT track ID
-      if (response.success && response.trackId && response.trackId !== currentTrack.id) {
-        await loadCurrentTrack();
-      }
-    } catch (error) {
-      // Silently ignore errors during periodic refresh
-    } finally {
-      isRefreshing = false;
-    }
-  }, 5000); // Check every 5 seconds
+  // Note: Removed auto-refresh interval as it was causing UI flicker and resetting user input.
+  // The popup now only loads track info once when opened.
+  // User can close and reopen popup to refresh track info.
 });
