@@ -276,8 +276,10 @@ document.addEventListener('DOMContentLoaded', async () => {
         currentGroovyData = response.data;
         updateGroovyBar(currentGroovyData, currentTrack.duration_ms);
 
-        // Trigger prefetch to update cache
-        sendMessage({ action: 'prefetchGroovyData' });
+        // Trigger prefetch to update cache (fire and forget with error handling)
+        sendMessage({ action: 'prefetchGroovyData' }).catch(err => {
+          console.log('Prefetch failed (non-critical):', err.message);
+        });
       } else {
         showStatus(response.error || 'Failed to save', 'error');
       }
@@ -353,25 +355,35 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   // Enable toggle
   enableToggle.addEventListener('change', async () => {
-    const enabled = enableToggle.checked;
+    try {
+      const enabled = enableToggle.checked;
 
-    // Save to storage
-    await chrome.storage.local.set({ groovy_enabled: enabled });
+      // Save to storage
+      await chrome.storage.local.set({ groovy_enabled: enabled });
 
-    // Notify content script
-    await sendToContentScript({ action: 'setEnabled', enabled });
+      // Notify content script
+      await sendToContentScript({ action: 'setEnabled', enabled });
 
-    showStatusBar(enabled ? 'Groovy enabled' : 'Groovy disabled');
+      showStatusBar(enabled ? 'Groovy enabled' : 'Groovy disabled');
+    } catch (error) {
+      console.error('Error toggling enable:', error);
+      showStatusBar('Failed to toggle', true);
+    }
   });
 
   // Auto Skip toggle
   autoskipToggle.addEventListener('change', async () => {
-    const autoskip = autoskipToggle.checked;
+    try {
+      const autoskip = autoskipToggle.checked;
 
-    // Save to storage
-    await chrome.storage.local.set({ groovy_autoskip: autoskip });
+      // Save to storage
+      await chrome.storage.local.set({ groovy_autoskip: autoskip });
 
-    showStatusBar(autoskip ? 'Auto skip enabled' : 'Auto skip disabled');
+      showStatusBar(autoskip ? 'Auto skip enabled' : 'Auto skip disabled');
+    } catch (error) {
+      console.error('Error toggling auto skip:', error);
+      showStatusBar('Failed to toggle', true);
+    }
   });
 
   // Set intime to current playback time
@@ -400,13 +412,20 @@ document.addEventListener('DOMContentLoaded', async () => {
     });
   });
 
-  // Load saved settings
-  const { groovy_enabled, groovy_autoskip } = await chrome.storage.local.get(['groovy_enabled', 'groovy_autoskip']);
-  enableToggle.checked = groovy_enabled !== false;
-  autoskipToggle.checked = groovy_autoskip !== false;
+  // Load saved settings and initialize
+  try {
+    const { groovy_enabled, groovy_autoskip } = await chrome.storage.local.get(['groovy_enabled', 'groovy_autoskip']);
+    enableToggle.checked = groovy_enabled !== false;
+    autoskipToggle.checked = groovy_autoskip !== false;
 
-  // Initialize
-  await checkLoginStatus();
+    // Initialize
+    await checkLoginStatus();
+  } catch (error) {
+    console.error('Initialization error:', error);
+    // Show login section as fallback
+    loginSection.classList.remove('hidden');
+    mainSection.classList.add('hidden');
+  }
 
   // Refresh track info periodically when popup is open (only if track changes)
   let isRefreshing = false;

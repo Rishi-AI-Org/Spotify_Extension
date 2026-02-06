@@ -3,8 +3,26 @@
 
 const CONFIG = {
   BACKEND_URL: 'https://spotify-extension-backend.onrender.com',
-  SPOTIFY_API_BASE: 'https://api.spotify.com/v1'
+  SPOTIFY_API_BASE: 'https://api.spotify.com/v1',
+  API_TIMEOUT: 15000,  // 15 seconds timeout for API calls
+  BACKEND_TIMEOUT: 30000  // 30 seconds timeout for backend (Render can be slow to wake)
 };
+
+// Fetch with timeout wrapper
+async function fetchWithTimeout(url, options = {}, timeout = CONFIG.API_TIMEOUT) {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), timeout);
+
+  try {
+    const response = await fetch(url, {
+      ...options,
+      signal: controller.signal
+    });
+    return response;
+  } finally {
+    clearTimeout(timeoutId);
+  }
+}
 
 // Start Spotify OAuth login flow via backend
 async function startSpotifyLogin() {
@@ -82,7 +100,7 @@ async function refreshAccessToken() {
     throw new Error('No refresh token available');
   }
 
-  const response = await fetch(`${CONFIG.BACKEND_URL}/auth/refresh`, {
+  const response = await fetchWithTimeout(`${CONFIG.BACKEND_URL}/auth/refresh`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json'
@@ -90,7 +108,7 @@ async function refreshAccessToken() {
     body: JSON.stringify({
       refresh_token: spotify_refresh_token
     })
-  });
+  }, CONFIG.BACKEND_TIMEOUT);
 
   if (!response.ok) {
     const error = await response.json().catch(() => ({}));
@@ -120,7 +138,7 @@ async function getCurrentTrack() {
     throw new Error('Not authenticated');
   }
 
-  const response = await fetch(`${CONFIG.SPOTIFY_API_BASE}/me/player/currently-playing`, {
+  const response = await fetchWithTimeout(`${CONFIG.SPOTIFY_API_BASE}/me/player/currently-playing`, {
     headers: {
       'Authorization': `Bearer ${token.access_token}`
     }
@@ -159,7 +177,7 @@ async function getQueue() {
     throw new Error('Not authenticated');
   }
 
-  const response = await fetch(`${CONFIG.SPOTIFY_API_BASE}/me/player/queue`, {
+  const response = await fetchWithTimeout(`${CONFIG.SPOTIFY_API_BASE}/me/player/queue`, {
     headers: {
       'Authorization': `Bearer ${token.access_token}`
     }
@@ -190,7 +208,7 @@ async function getQueue() {
 // Fetch groovy data for a track from backend
 async function getGroovyData(trackId) {
   try {
-    const response = await fetch(`${CONFIG.BACKEND_URL}/api/groovy/${trackId}`);
+    const response = await fetchWithTimeout(`${CONFIG.BACKEND_URL}/api/groovy/${trackId}`, {}, CONFIG.BACKEND_TIMEOUT);
 
     if (response.status === 404) {
       return null; // No groovy data for this track
@@ -209,7 +227,7 @@ async function getGroovyData(trackId) {
 
 // Save groovy data to backend
 async function saveGroovyData(trackId, trackName, artistName, intime, outtime) {
-  const response = await fetch(`${CONFIG.BACKEND_URL}/api/groovy`, {
+  const response = await fetchWithTimeout(`${CONFIG.BACKEND_URL}/api/groovy`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json'
@@ -222,7 +240,7 @@ async function saveGroovyData(trackId, trackName, artistName, intime, outtime) {
       outtime: outtime,
       source: 'user'
     })
-  });
+  }, CONFIG.BACKEND_TIMEOUT);
 
   if (!response.ok) {
     throw new Error('Failed to save groovy data');
@@ -274,7 +292,7 @@ async function seekToPosition(positionMs) {
     throw new Error('Not authenticated');
   }
 
-  const response = await fetch(`${CONFIG.SPOTIFY_API_BASE}/me/player/seek?position_ms=${positionMs}`, {
+  const response = await fetchWithTimeout(`${CONFIG.SPOTIFY_API_BASE}/me/player/seek?position_ms=${positionMs}`, {
     method: 'PUT',
     headers: {
       'Authorization': `Bearer ${token.access_token}`
@@ -295,7 +313,7 @@ async function skipToNext() {
     throw new Error('Not authenticated');
   }
 
-  const response = await fetch(`${CONFIG.SPOTIFY_API_BASE}/me/player/next`, {
+  const response = await fetchWithTimeout(`${CONFIG.SPOTIFY_API_BASE}/me/player/next`, {
     method: 'POST',
     headers: {
       'Authorization': `Bearer ${token.access_token}`
