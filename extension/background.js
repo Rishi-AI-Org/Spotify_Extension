@@ -215,13 +215,21 @@ async function getGroovyData(trackId) {
     }
 
     if (!response.ok) {
-      throw new Error('Failed to fetch groovy data');
+      // Log more details about the error
+      const errorText = await response.text().catch(() => 'Unable to read response');
+      console.warn(`Groovy data fetch failed (${response.status}): ${errorText}`);
+      return null; // Return null instead of throwing - non-critical error
     }
 
     return await response.json();
   } catch (error) {
-    console.error('Error fetching groovy data:', error);
-    return null;
+    // Handle timeout specifically
+    if (error.name === 'AbortError') {
+      console.warn('Groovy data fetch timed out for track:', trackId);
+    } else {
+      console.warn('Error fetching groovy data:', error.message);
+    }
+    return null; // Always return null on error - don't crash
   }
 }
 
@@ -252,7 +260,15 @@ async function saveGroovyData(trackId, trackName, artistName, intime, outtime) {
 // Prefetch groovy data for current track and queue
 async function prefetchGroovyData() {
   try {
-    const queueData = await getQueue();
+    const queueData = await getQueue().catch(err => {
+      console.warn('Failed to get queue for prefetch:', err.message);
+      return null;
+    });
+
+    if (!queueData) {
+      return {}; // Can't prefetch without queue
+    }
+
     const trackIds = [];
 
     if (queueData.currently_playing) {
@@ -260,13 +276,20 @@ async function prefetchGroovyData() {
     }
 
     // Add next few tracks from queue
-    for (let i = 0; i < Math.min(5, queueData.queue.length); i++) {
-      trackIds.push(queueData.queue[i].id);
+    if (queueData.queue) {
+      for (let i = 0; i < Math.min(5, queueData.queue.length); i++) {
+        trackIds.push(queueData.queue[i].id);
+      }
     }
 
-    // Fetch groovy data for all tracks in parallel
-    const groovyDataPromises = trackIds.map(id => getGroovyData(id));
-    const groovyResults = await Promise.all(groovyDataPromises);
+    if (trackIds.length === 0) {
+      return {}; // No tracks to prefetch
+    }
+
+    // Fetch groovy data for all tracks in parallel (each handles its own errors)
+    const groovyResults = await Promise.all(
+      trackIds.map(id => getGroovyData(id))
+    );
 
     // Store prefetched data
     const prefetchedData = {};
@@ -280,7 +303,7 @@ async function prefetchGroovyData() {
 
     return prefetchedData;
   } catch (error) {
-    console.error('Error prefetching groovy data:', error);
+    console.warn('Error in prefetchGroovyData:', error.message);
     return {};
   }
 }
