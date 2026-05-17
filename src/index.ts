@@ -3,6 +3,8 @@ import cors from 'cors';
 import dotenv from 'dotenv';
 import groovyRoutes from './routes/groovy';
 import authRoutes from './routes/auth';
+import eventsRoutes from './routes/events';
+import aggregatesRoutes from './routes/aggregates';
 
 // Load environment variables
 dotenv.config();
@@ -26,6 +28,8 @@ app.use((req, res, next) => {
 
 // Routes
 app.use('/api/groovy', groovyRoutes);
+app.use('/api/events', eventsRoutes);
+app.use('/api/aggregates', aggregatesRoutes);
 app.use('/auth', authRoutes);
 
 // Health check
@@ -36,6 +40,9 @@ app.get('/', (req, res) => {
     status: 'running',
     endpoints: {
       groovy: '/api/groovy/:trackId',
+      events_ingest: 'POST /api/events/batch',
+      aggregates: 'GET /api/aggregates',
+      aggregates_refresh: 'POST /api/aggregates/refresh',
       auth: '/auth/login',
       health: '/auth/health'
     }

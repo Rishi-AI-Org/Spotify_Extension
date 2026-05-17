@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Groovy Collector</string>
+    <string name="listener_label">Groovy Collector – Spotify listener</string>
+    <string name="onboarding_title">Help build the groovy parts library</string>
+    <string name="onboarding_body">This app watches when you skip or seek inside Spotify and sends only anonymous skip/seek positions to our server. It never records audio or your account.\n\nTap below to grant notification access. That\'s all we need.</string>
+    <string name="grant_access">Grant notification access</string>
+    <string name="status_active">Listening to Spotify</string>
+    <string name="status_inactive">Notification access not granted</string>
+    <string name="status_no_spotify">Spotify not running yet — open it and play a song</string>
+    <string name="events_queued">%1$d events queued · %2$d uploaded</string>
+    <string name="last_upload_never">No uploads yet</string>
+    <string name="last_upload_at">Last upload: %1$s</string>
+    <string name="anon_id">Anonymous ID: %1$s</string>
+    <string name="upload_now">Upload now</string>
+</resources>

@@ -24,3 +24,31 @@ export interface SpotifyUser {
   display_name: string;
   email?: string;
 }
+
+export type PlaybackEventType = 'skip_to_next' | 'natural_transition' | 'seek_forward';
+
+export interface ClientPlaybackEvent {
+  client_session_id: string;
+  artist: string;
+  name: string;
+  duration_ms: number;
+  event_type: PlaybackEventType;
+  position_ms: number;
+  occurred_at: string; // ISO timestamp
+}
+
+export interface ClientPartySession {
+  client_session_id: string;
+  started_at: string;
+  ended_at?: string;
+  track_count: number;
+  qualifying_skip_count: number;
+}
+
+export interface EventBatchPayload {
+  anon_id: string;
+  app_version?: string;
+  android_sdk?: number;
+  sessions: ClientPartySession[];
+  events: ClientPlaybackEvent[];
+}

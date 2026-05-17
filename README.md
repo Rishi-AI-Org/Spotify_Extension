@@ -1,11 +1,25 @@
-# Groovy Spotify Backend
+# Groovy Spotify
 
-Backend API server for the Groovy Spotify Chrome Extension.
+Backend + Android collector + (future) web dashboard for crowdsourcing
+"groovy parts" (the hook segment a DJ keeps; the boring parts they skip)
+across Spotify tracks.
+
+## Architecture
+
+- `src/` — Express/TypeScript backend on Supabase. Ingests playback events,
+  resolves tracks to Spotify URIs via Client Credentials search,
+  aggregates per-track intime/outtime with a ±1σ outlier filter.
+- `android/` — `NotificationListenerService`-based collector. Captures
+  Spotify skip/seek events with zero Spotify-developer-quota usage
+  (bypasses the Feb-2026 dev-mode 5-user cap). See `android/README.md`.
+- `migrations/` — additional SQL migrations on top of `database-setup.sql`.
 
 ## Features
 
 - 🎵 **Groovy Parts API** - Store and retrieve groovy timestamps for Spotify tracks
-- 🔐 **Spotify OAuth** - Authenticate users with Spotify
+- 📥 **Crowdsourced ingest** - `POST /api/events/batch` from Android collectors
+- 📊 **Aggregates** - `POST /api/aggregates/refresh` and `GET /api/aggregates`
+- 🔐 **Spotify OAuth** - Authenticate users with Spotify (legacy)
 - 💾 **Supabase Database** - PostgreSQL database for storing groovy data
 - 🚀 **Render Deployment** - Easy deployment to Render.com
 
