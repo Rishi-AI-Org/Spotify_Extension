@@ -28,12 +28,26 @@ class SpotifyListenerService : NotificationListenerService() {
         attachToSpotify(controllers ?: emptyList())
     }
 
+    private val pollRunnable = object : Runnable {
+        override fun run() {
+            if (!isListenerBound) return
+            try {
+                attachToSpotify(sessionManager.getActiveSessions(componentName))
+            } catch (e: Throwable) {
+                Log.w(TAG, "Poll getActiveSessions failed: ${e.message}")
+            }
+            mainHandler.postDelayed(this, POLL_INTERVAL_MS)
+        }
+    }
+
     override fun onListenerConnected() {
         super.onListenerConnected()
         Log.i(TAG, "Listener connected")
         sessionManager = getSystemService(Context.MEDIA_SESSION_SERVICE) as MediaSessionManager
         sessionManager.addOnActiveSessionsChangedListener(listenerCallback, componentName, mainHandler)
         attachToSpotify(sessionManager.getActiveSessions(componentName))
+        mainHandler.removeCallbacks(pollRunnable)
+        mainHandler.postDelayed(pollRunnable, POLL_INTERVAL_MS)
     }
 
     override fun onListenerDisconnected() {
@@ -41,24 +55,20 @@ class SpotifyListenerService : NotificationListenerService() {
         try {
             sessionManager.removeOnActiveSessionsChangedListener(listenerCallback)
         } catch (_: Throwable) { /* not yet initialized */ }
+        mainHandler.removeCallbacks(pollRunnable)
         tracker.detach()
         super.onListenerDisconnected()
     }
 
     private fun attachToSpotify(controllers: List<MediaController>) {
-        val spotify = controllers.firstOrNull { it.packageName == SPOTIFY_PKG }
+        lastDetectedPackages = controllers.map { it.packageName }
+        val spotify = controllers.firstOrNull { it.packageName.startsWith(SPOTIFY_PKG_PREFIX) }
         tracker.bind(spotify)
         isAttachedToSpotify = spotify != null
         lastConnectedAt = System.currentTimeMillis()
-    }
-
-    companion object {
-        private const val TAG = "GroovyListener"
-        const val SPOTIFY_PKG = "com.spotify.music"
-
-        @Volatile var isListenerBound: Boolean = false
-        @Volatile var isAttachedToSpotify: Boolean = false
-        @Volatile var lastConnectedAt: Long = 0L
+        if (spotify != null) {
+            Log.i(TAG, "Attached to Spotify session: ${spotify.packageName}")
+        }
     }
 
     override fun onCreate() {
@@ -69,6 +79,20 @@ class SpotifyListenerService : NotificationListenerService() {
     override fun onDestroy() {
         isListenerBound = false
         isAttachedToSpotify = false
+        mainHandler.removeCallbacks(pollRunnable)
         super.onDestroy()
     }
+
+    companion object {
+        private const val TAG = "GroovyListener"
+        // Match Spotify, Spotify Lite, Spotify Stations, etc.
+        const val SPOTIFY_PKG_PREFIX = "com.spotify"
+        private const val POLL_INTERVAL_MS = 5_000L
+
+        @Volatile var isListenerBound: Boolean = false
+        @Volatile var isAttachedToSpotify: Boolean = false
+        @Volatile var lastConnectedAt: Long = 0L
+        @Volatile var lastDetectedPackages: List<String> = emptyList()
+    }
 }
+

@@ -12,6 +12,8 @@
     <string name="permission_check">Permission: %1$s</string>
     <string name="listener_check">Listener bound: %1$s</string>
     <string name="spotify_check">Spotify session: %1$s</string>
+    <string name="visible_pkgs">Visible sessions: %1$s</string>
+    <string name="no_sessions">(none)</string>
     <string name="yes">yes</string>
     <string name="no">no</string>
     <string name="force_reconnect">Force reconnect listener</string>

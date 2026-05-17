@@ -76,6 +76,10 @@ class MainActivity : AppCompatActivity() {
         binding.listenerCheckText.text = getString(R.string.listener_check, if (listenerBound) yes else no)
         binding.spotifyCheckText.text = getString(R.string.spotify_check, if (spotifyAttached) yes else no)
 
+        val pkgs = SpotifyListenerService.lastDetectedPackages
+        val pkgsText = if (pkgs.isEmpty()) getString(R.string.no_sessions) else pkgs.joinToString(", ")
+        binding.visiblePackagesText.text = getString(R.string.visible_pkgs, pkgsText)
+
         binding.countsText.text = getString(R.string.events_queued, queued.toInt(), uploaded.toInt())
         val last = prefs.lastUploadAt
         binding.lastUploadText.text = if (last == 0L) getString(R.string.last_upload_never)
