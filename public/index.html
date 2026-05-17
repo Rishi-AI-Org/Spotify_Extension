@@ -1,0 +1,363 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Groovy Parts — recommended in/out times for your Spotify mixes</title>
+<style>
+  :root {
+    --bg: #0a0a0a;
+    --panel: #181818;
+    --panel-2: #242424;
+    --text: #ffffff;
+    --muted: #b3b3b3;
+    --green: #1DB954;
+    --border: #2a2a2a;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    line-height: 1.5;
+  }
+  header {
+    padding: 32px 24px 16px;
+    max-width: 1100px;
+    margin: 0 auto;
+  }
+  h1 {
+    margin: 0 0 8px;
+    font-size: 32px;
+    font-weight: 700;
+    letter-spacing: -0.5px;
+  }
+  h1 .accent { color: var(--green); }
+  .tagline {
+    color: var(--muted);
+    margin: 0 0 24px;
+    font-size: 15px;
+    max-width: 640px;
+  }
+  .stats {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+    gap: 12px;
+    margin-bottom: 32px;
+  }
+  .stat {
+    background: var(--panel);
+    border-radius: 8px;
+    padding: 14px 18px;
+  }
+  .stat-num {
+    font-size: 24px;
+    font-weight: 700;
+    line-height: 1;
+  }
+  .stat-label {
+    font-size: 12px;
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-top: 6px;
+  }
+  .controls {
+    max-width: 1100px;
+    margin: 0 auto;
+    padding: 0 24px 16px;
+    display: flex;
+    gap: 12px;
+    align-items: center;
+  }
+  .search {
+    flex: 1;
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    color: var(--text);
+    padding: 10px 14px;
+    font-size: 14px;
+    outline: none;
+  }
+  .search:focus { border-color: var(--green); }
+  select {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    color: var(--text);
+    padding: 10px 14px;
+    font-size: 14px;
+  }
+  main {
+    max-width: 1100px;
+    margin: 0 auto;
+    padding: 0 24px 64px;
+  }
+  .tracks {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+    gap: 16px;
+  }
+  .card {
+    background: var(--panel);
+    border-radius: 10px;
+    overflow: hidden;
+    transition: transform 0.15s, background 0.15s;
+  }
+  .card:hover {
+    background: var(--panel-2);
+  }
+  .card iframe {
+    width: 100%;
+    height: 80px;
+    border: 0;
+    display: block;
+  }
+  .card-body {
+    padding: 14px 16px 16px;
+  }
+  .times {
+    display: flex;
+    gap: 18px;
+    margin-bottom: 8px;
+    align-items: baseline;
+  }
+  .time {
+    display: flex;
+    flex-direction: column;
+  }
+  .time-label {
+    font-size: 10px;
+    text-transform: uppercase;
+    color: var(--muted);
+    letter-spacing: 1px;
+  }
+  .time-value {
+    font-size: 22px;
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+    color: var(--green);
+  }
+  .arrow {
+    color: var(--muted);
+    font-size: 18px;
+    align-self: center;
+  }
+  .meta {
+    color: var(--muted);
+    font-size: 12px;
+  }
+  .empty, .loading {
+    text-align: center;
+    color: var(--muted);
+    padding: 64px 24px;
+    font-size: 15px;
+  }
+  .how-to {
+    max-width: 1100px;
+    margin: 32px auto 0;
+    padding: 0 24px;
+  }
+  .how-to-inner {
+    background: var(--panel);
+    border-radius: 10px;
+    padding: 24px;
+  }
+  .how-to h2 {
+    margin: 0 0 12px;
+    font-size: 18px;
+  }
+  .how-to ol {
+    margin: 0;
+    padding-left: 22px;
+    color: var(--muted);
+    font-size: 14px;
+  }
+  .how-to li { margin-bottom: 6px; }
+  footer {
+    text-align: center;
+    color: var(--muted);
+    font-size: 12px;
+    padding: 32px 24px;
+  }
+  footer a { color: var(--green); text-decoration: none; }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>Groovy<span class="accent"> Parts</span></h1>
+  <p class="tagline">
+    Crowd-sourced recommended in / out times for every Spotify track —
+    skip the boring intros and outros, keep the hook.
+  </p>
+  <div class="stats" id="stats">
+    <div class="stat"><div class="stat-num" id="stat-events">—</div><div class="stat-label">events captured</div></div>
+    <div class="stat"><div class="stat-num" id="stat-tracks">—</div><div class="stat-label">tracks seen</div></div>
+    <div class="stat"><div class="stat-num" id="stat-aggregates">—</div><div class="stat-label">with recommendations</div></div>
+    <div class="stat"><div class="stat-num" id="stat-devices">—</div><div class="stat-label">contributors</div></div>
+  </div>
+</header>
+
+<div class="controls">
+  <input id="search" class="search" placeholder="Search by artist or song..." autocomplete="off">
+  <select id="sort">
+    <option value="samples">Most samples</option>
+    <option value="recent">Recently updated</option>
+    <option value="duration">Shortest groovy part</option>
+  </select>
+</div>
+
+<main>
+  <div id="tracks" class="tracks"></div>
+  <div id="loading" class="loading">Loading…</div>
+  <div id="empty" class="empty" style="display: none;">
+    No tracks have enough data yet. Keep listening — you need at least 5 skip events on the same song before it appears here.
+  </div>
+</main>
+
+<section class="how-to">
+  <div class="how-to-inner">
+    <h2>How to apply these times in Spotify Mix</h2>
+    <ol>
+      <li>Open Spotify on your phone and pick the track you want to add.</li>
+      <li>Long-press the track → <strong>Add to Mix</strong>.</li>
+      <li>Tap <strong>Edit transitions</strong> on the track in the Mix view.</li>
+      <li>Set <strong>Start at</strong> to the IN time above and <strong>End at</strong> to the OUT time above.</li>
+      <li>Save. Repeat for each track in your mix.</li>
+    </ol>
+  </div>
+</section>
+
+<footer>
+  This data is crowd-sourced from real listeners. Want to contribute? Run the
+  Groovy Collector Android app and listen normally — your skip points join the pool.
+</footer>
+
+<script>
+  const $ = (id) => document.getElementById(id);
+
+  function mmss(ms) {
+    if (ms === null || ms === undefined) return '—';
+    const s = Math.max(0, Math.round(ms / 1000));
+    const m = Math.floor(s / 60);
+    const r = s % 60;
+    return `${m}:${r.toString().padStart(2, '0')}`;
+  }
+
+  function fmtNum(n) {
+    if (n === null || n === undefined) return '—';
+    return n.toLocaleString();
+  }
+
+  function trackIdFromUri(uri) {
+    if (!uri) return null;
+    const m = uri.match(/spotify:track:([a-zA-Z0-9]+)/);
+    return m ? m[1] : null;
+  }
+
+  let allTracks = [];
+
+  async function loadStats() {
+    try {
+      const r = await fetch('/api/stats');
+      const s = await r.json();
+      $('stat-events').textContent = fmtNum(s.total_events);
+      $('stat-tracks').textContent = fmtNum(s.total_tracks);
+      $('stat-aggregates').textContent = fmtNum(s.total_aggregates);
+      $('stat-devices').textContent = fmtNum(s.total_devices);
+    } catch (e) {
+      console.warn('stats load failed', e);
+    }
+  }
+
+  async function loadTracks() {
+    try {
+      const r = await fetch('/api/aggregates');
+      const j = await r.json();
+      allTracks = j.data || [];
+      render();
+    } catch (e) {
+      console.error('aggregates load failed', e);
+      $('loading').textContent = 'Failed to load. Try again later.';
+    }
+  }
+
+  function render() {
+    $('loading').style.display = 'none';
+    const q = $('search').value.toLowerCase().trim();
+    const sortMode = $('sort').value;
+
+    let list = allTracks.filter(t => {
+      if (!q) return true;
+      const meta = t.tracks || {};
+      return (meta.artist || '').toLowerCase().includes(q)
+          || (meta.name || '').toLowerCase().includes(q);
+    });
+
+    list.sort((a, b) => {
+      if (sortMode === 'samples') return b.sample_size - a.sample_size;
+      if (sortMode === 'recent') return new Date(b.last_computed_at) - new Date(a.last_computed_at);
+      if (sortMode === 'duration') {
+        const da = (a.mean_outtime_ms || 0) - (a.mean_intime_ms || 0);
+        const db = (b.mean_outtime_ms || 0) - (b.mean_intime_ms || 0);
+        return da - db;
+      }
+      return 0;
+    });
+
+    const root = $('tracks');
+    root.innerHTML = '';
+
+    if (list.length === 0) {
+      $('empty').style.display = 'block';
+      return;
+    }
+    $('empty').style.display = 'none';
+
+    for (const t of list) {
+      const meta = t.tracks || {};
+      const sid = trackIdFromUri(meta.spotify_uri);
+      const card = document.createElement('div');
+      card.className = 'card';
+      card.innerHTML = `
+        ${sid ? `<iframe src="https://open.spotify.com/embed/track/${sid}?utm_source=groovy" loading="lazy" allow="encrypted-media"></iframe>` : ''}
+        <div class="card-body">
+          ${!sid ? `<div style="font-weight:600; margin-bottom:6px;">${escapeHtml(meta.name || '?')}</div>
+                   <div class="meta" style="margin-bottom:10px;">${escapeHtml(meta.artist || '?')}</div>` : ''}
+          <div class="times">
+            <div class="time">
+              <span class="time-label">IN</span>
+              <span class="time-value">${mmss(t.mean_intime_ms)}</span>
+            </div>
+            <span class="arrow">→</span>
+            <div class="time">
+              <span class="time-label">OUT</span>
+              <span class="time-value">${mmss(t.mean_outtime_ms)}</span>
+            </div>
+          </div>
+          <div class="meta">${t.sample_size} sample${t.sample_size === 1 ? '' : 's'} · σ ±${Math.round((t.stddev_outtime_ms || 0) / 1000)}s</div>
+        </div>
+      `;
+      root.appendChild(card);
+    }
+  }
+
+  function escapeHtml(s) {
+    return String(s).replace(/[&<>"']/g, c => (
+      { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]
+    ));
+  }
+
+  $('search').addEventListener('input', render);
+  $('sort').addEventListener('change', render);
+
+  loadStats();
+  loadTracks();
+  setInterval(loadStats, 30_000);
+</script>
+
+</body>
+</html>

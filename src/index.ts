@@ -1,10 +1,12 @@
 import express from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
+import path from 'path';
 import groovyRoutes from './routes/groovy';
 import authRoutes from './routes/auth';
 import eventsRoutes from './routes/events';
 import aggregatesRoutes from './routes/aggregates';
+import statsRoutes from './routes/stats';
 
 // Load environment variables
 dotenv.config();
@@ -26,28 +28,34 @@ app.use((req, res, next) => {
   next();
 });
 
-// Routes
+// API routes
 app.use('/api/groovy', groovyRoutes);
 app.use('/api/events', eventsRoutes);
 app.use('/api/aggregates', aggregatesRoutes);
+app.use('/api/stats', statsRoutes);
 app.use('/auth', authRoutes);
 
-// Health check
-app.get('/', (req, res) => {
+// JSON health/discovery (moved from / so we can serve the dashboard there)
+app.get('/api', (_req, res) => {
   res.json({
     name: 'Groovy Spotify Backend',
     version: '1.0.0',
     status: 'running',
     endpoints: {
+      dashboard: '/',
       groovy: '/api/groovy/:trackId',
       events_ingest: 'POST /api/events/batch',
       aggregates: 'GET /api/aggregates',
       aggregates_refresh: 'POST /api/aggregates/refresh',
+      stats: 'GET /api/stats',
       auth: '/auth/login',
       health: '/auth/health'
     }
   });
 });
+
+// Static dashboard at / (and anything in public/)
+app.use(express.static(path.join(__dirname, '..', 'public')));
 
 // Error handling
 app.use((err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {
