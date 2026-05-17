@@ -3,7 +3,10 @@ import { supabase } from '../db/supabase';
 
 const router = Router();
 
-const MIN_SAMPLE_SIZE = 5;
+const DEFAULT_MIN_SAMPLE_SIZE = Math.max(
+  1,
+  Number(process.env.MIN_AGGREGATE_SAMPLE) || 2
+);
 
 interface TrackRow {
   id: string;
@@ -31,20 +34,32 @@ function meanStddev(values: number[]): { mean: number; stddev: number } {
  *   1. Compute mean + stddev of raw samples.
  *   2. Drop samples >1σ from the mean.
  *   3. Recompute mean from the filtered set.
- * Returns null if the post-filter set is smaller than MIN_SAMPLE_SIZE.
+ * Returns null if there are zero samples. For 1–2 samples the stddev
+ * filter is degenerate, so we fall back to the raw mean.
  */
-function filteredMean(values: number[]): {
+function filteredMean(
+  values: number[],
+  minN: number
+): {
   filteredMean: number | null;
   rawStddev: number;
   rawN: number;
   filteredN: number;
 } {
   const { mean: rawMean, stddev: rawStddev } = meanStddev(values);
-  if (values.length < MIN_SAMPLE_SIZE) {
-    return { filteredMean: null, rawStddev, rawN: values.length, filteredN: 0 };
+  if (values.length === 0) {
+    return { filteredMean: null, rawStddev, rawN: 0, filteredN: 0 };
+  }
+  if (values.length < Math.max(3, minN)) {
+    return {
+      filteredMean: values.length >= minN ? Math.round(rawMean) : null,
+      rawStddev,
+      rawN: values.length,
+      filteredN: values.length,
+    };
   }
   const kept = values.filter((v) => Math.abs(v - rawMean) <= rawStddev);
-  if (kept.length < MIN_SAMPLE_SIZE) {
+  if (kept.length < minN) {
     return { filteredMean: null, rawStddev, rawN: values.length, filteredN: kept.length };
   }
   const { mean } = meanStddev(kept);
@@ -64,6 +79,7 @@ function filteredMean(values: number[]): {
 router.post('/refresh', async (req: Request, res: Response) => {
   try {
     const onlyTrack = req.body?.track_id as string | undefined;
+    const minN = Math.max(1, Number(req.query.min_n ?? req.body?.min_n ?? DEFAULT_MIN_SAMPLE_SIZE));
 
     let tracksQuery = supabase.from('tracks').select('id, artist, name, duration_ms, spotify_uri');
     if (onlyTrack) tracksQuery = tracksQuery.eq('id', onlyTrack);
@@ -88,8 +104,8 @@ router.post('/refresh', async (req: Request, res: Response) => {
         .filter((e) => e.event_type === 'skip_to_next')
         .map((e) => e.position_ms);
 
-      const intimeR = filteredMean(intimes);
-      const outtimeR = filteredMean(outtimes);
+      const intimeR = filteredMean(intimes, minN);
+      const outtimeR = filteredMean(outtimes, minN);
 
       const rawN = Math.max(intimeR.rawN, outtimeR.rawN);
       if (rawN === 0) continue;
@@ -147,7 +163,7 @@ router.post('/refresh', async (req: Request, res: Response) => {
  */
 router.get('/', async (req: Request, res: Response) => {
   try {
-    const minN = Math.max(MIN_SAMPLE_SIZE, Number(req.query.min_n ?? MIN_SAMPLE_SIZE));
+    const minN = Math.max(1, Number(req.query.min_n ?? DEFAULT_MIN_SAMPLE_SIZE));
     const { data, error } = await supabase
       .from('track_aggregates')
       .select(

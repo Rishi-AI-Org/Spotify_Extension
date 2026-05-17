@@ -183,6 +183,29 @@
     padding: 32px 24px;
   }
   footer a { color: var(--green); text-decoration: none; }
+  .download-cta {
+    max-width: 1100px;
+    margin: 24px auto 0;
+    padding: 0 24px;
+    text-align: center;
+  }
+  .download-btn {
+    display: inline-block;
+    background: var(--green);
+    color: #000;
+    font-weight: 700;
+    text-decoration: none;
+    padding: 14px 28px;
+    border-radius: 999px;
+    font-size: 15px;
+    transition: transform 0.15s;
+  }
+  .download-btn:hover { transform: scale(1.03); }
+  .download-sub {
+    color: var(--muted);
+    font-size: 12px;
+    margin-top: 10px;
+  }
 </style>
 </head>
 <body>
@@ -231,9 +254,19 @@
   </div>
 </section>
 
+<section class="download-cta">
+  <a class="download-btn" href="/groovy-collector.apk" download>
+    Download collector app (.apk)
+  </a>
+  <div class="download-sub">
+    Android only. Install, grant notification access, listen normally —
+    your skip points join the pool above.
+  </div>
+</section>
+
 <footer>
-  This data is crowd-sourced from real listeners. Want to contribute? Run the
-  Groovy Collector Android app and listen normally — your skip points join the pool.
+  Data is crowd-sourced and fully anonymous — no Spotify account linked,
+  no audio recorded.
 </footer>
 
 <script>
@@ -275,7 +308,10 @@
 
   async function loadTracks() {
     try {
-      const r = await fetch('/api/aggregates');
+      const params = new URLSearchParams(window.location.search);
+      const minN = params.get('min_n');
+      const url = '/api/aggregates' + (minN ? `?min_n=${encodeURIComponent(minN)}` : '');
+      const r = await fetch(url);
       const j = await r.json();
       allTracks = j.data || [];
       render();

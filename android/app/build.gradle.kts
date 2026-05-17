@@ -1,7 +1,17 @@
+import java.util.Properties
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
 }
+
+// Optional release signing. Create android/keystore.properties locally
+// (gitignored) with: storeFile, storePassword, keyAlias, keyPassword.
+// See android/RELEASE.md for the one-time keystore setup.
+val keystorePropsFile = rootProject.file("keystore.properties")
+val keystoreProps: Properties? = if (keystorePropsFile.exists()) {
+    Properties().apply { keystorePropsFile.inputStream().use { load(it) } }
+} else null
 
 android {
     namespace = "com.groovy.collector"
@@ -17,6 +27,27 @@ android {
         val backend = (project.findProperty("backend") as String?)
             ?: "https://groovy-spotify-backend.onrender.com"
         buildConfigField("String", "BACKEND_BASE_URL", "\"$backend\"")
+    }
+
+    if (keystoreProps != null) {
+        signingConfigs {
+            create("release") {
+                storeFile = rootProject.file(keystoreProps["storeFile"] as String)
+                storePassword = keystoreProps["storePassword"] as String
+                keyAlias = keystoreProps["keyAlias"] as String
+                keyPassword = keystoreProps["keyPassword"] as String
+            }
+        }
+    }
+
+    buildTypes {
+        getByName("release") {
+            // No minify for now — keeps build simple, APK ~7-8 MB.
+            isMinifyEnabled = false
+            if (keystoreProps != null) {
+                signingConfig = signingConfigs.getByName("release")
+            }
+        }
     }
 
     buildFeatures {
