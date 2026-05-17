@@ -51,6 +51,28 @@
             tools:ignore="MissingDefaultResource" />
 
         <TextView
+            android:id="@+id/permissionCheckText"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:textSize="13sp"
+            android:fontFamily="monospace" />
+
+        <TextView
+            android:id="@+id/listenerCheckText"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:textSize="13sp"
+            android:fontFamily="monospace" />
+
+        <TextView
+            android:id="@+id/spotifyCheckText"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:textSize="13sp"
+            android:fontFamily="monospace"
+            android:paddingBottom="12dp" />
+
+        <TextView
             android:id="@+id/countsText"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
@@ -71,6 +93,14 @@
             android:textSize="12sp"
             android:textColor="#888888"
             android:paddingBottom="16dp" />
+
+        <Button
+            android:id="@+id/reconnectButton"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="@string/force_reconnect"
+            android:layout_marginBottom="8dp"
+            style="?attr/borderlessButtonStyle" />
 
         <Button
             android:id="@+id/uploadNowButton"

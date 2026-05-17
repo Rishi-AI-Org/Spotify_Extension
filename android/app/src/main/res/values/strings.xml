@@ -7,7 +7,14 @@
     <string name="grant_access">Grant notification access</string>
     <string name="status_active">Listening to Spotify</string>
     <string name="status_inactive">Notification access not granted</string>
-    <string name="status_no_spotify">Spotify not running yet — open it and play a song</string>
+    <string name="status_no_spotify">Granted, but no Spotify session yet — open Spotify and play a song</string>
+    <string name="status_listener_disconnected">Granted, but listener not yet started — tap Force reconnect</string>
+    <string name="permission_check">Permission: %1$s</string>
+    <string name="listener_check">Listener bound: %1$s</string>
+    <string name="spotify_check">Spotify session: %1$s</string>
+    <string name="yes">yes</string>
+    <string name="no">no</string>
+    <string name="force_reconnect">Force reconnect listener</string>
     <string name="events_queued">%1$d events queued · %2$d uploaded</string>
     <string name="last_upload_never">No uploads yet</string>
     <string name="last_upload_at">Last upload: %1$s</string>

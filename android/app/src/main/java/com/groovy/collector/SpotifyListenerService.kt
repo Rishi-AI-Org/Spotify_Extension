@@ -48,10 +48,27 @@ class SpotifyListenerService : NotificationListenerService() {
     private fun attachToSpotify(controllers: List<MediaController>) {
         val spotify = controllers.firstOrNull { it.packageName == SPOTIFY_PKG }
         tracker.bind(spotify)
+        isAttachedToSpotify = spotify != null
+        lastConnectedAt = System.currentTimeMillis()
     }
 
     companion object {
         private const val TAG = "GroovyListener"
         const val SPOTIFY_PKG = "com.spotify.music"
+
+        @Volatile var isListenerBound: Boolean = false
+        @Volatile var isAttachedToSpotify: Boolean = false
+        @Volatile var lastConnectedAt: Long = 0L
+    }
+
+    override fun onCreate() {
+        super.onCreate()
+        isListenerBound = true
+    }
+
+    override fun onDestroy() {
+        isListenerBound = false
+        isAttachedToSpotify = false
+        super.onDestroy()
     }
 }
