@@ -15,8 +15,13 @@ A premium feature concept, backed by a working prototype.
 ### 2. The Problem — the "DJ Gap"
 Every party song has a peak. The second it ends and the next track starts cold, the dance
 floor dies and stays dead through the intro.
-Example: *Chaiyya Chaiyya*'s peak ends ~1:54; *Gajra Re*'s peak doesn't kick in until ~1:00
-— that's roughly **2 minutes of dead dance floor between two bangers**.
+
+Example (with real timestamps I use):
+- **Chaiyya Chaiyya** (~7:00): peak runs **0:54–1:54** — the rest is filler
+- **Kajra Re** (~6:00): peak runs **1:00–2:20** — buildup before, fade after
+
+When *Chaiyya Chaiyya*'s peak ends at 1:54 and *Kajra Re*'s peak doesn't start until 1:00,
+that's **≈1 min 6 sec of dead dance floor between two bangers**.
 **Nobody dances to an intro.**
 
 ### 3. Why this matters (especially in India)
@@ -81,8 +86,15 @@ schema (a peaks table with in-time, out-time & confidence score).
 - **Phase 3:** Party Mode toggle + group / social party sessions
 
 ### 13. The ask
-I have the prototype and the playbook. Give me 20 minutes — I'll demo Groovy live and walk
-your team through the data approach. Let's make JioSaavn the sound of every Indian party.
+I built a prototype — and tested it at real parties.
+
+I've been using Groovy at college dorm parties and frat parties. It works — the energy stays
+up. I have screen recordings of each transition: the song that ends, the song that starts,
+and where the peaks land.
+
+If this sounds interesting, I'd be happy to share the recordings or walk you through how it
+works. I'm not pitching myself — just the idea. If JioSaavn ships this, everyone wins.
+
 **Rishi · rishinikamai@gmail.com**
 
 ---
@@ -90,10 +102,11 @@ your team through the data approach. Let's make JioSaavn the sound of every Indi
 ## Bonus — short versions
 
 **Tweet / DM (≤280 chars):**
-> Hey @JioSaavn — I built a working prototype that auto-plays just the *peak* of every song
-> and skips the dead air, so party energy never drops. Spotify's API blocks crossfade; your
-> player doesn't. Imagine a premium "Party Mode." 20-min demo? rishinikamai@gmail.com
+> Hey @JioSaavn — I built a prototype that auto-plays just the *peak* of each song and
+> skips the dead air. Tested it at college parties — it works. Spotify can't do crossfade;
+> you can. Happy to share screen recordings. rishinikamai@gmail.com
 
 **One-line elevator pitch:**
-> Party Mode = a one-tap "DJ in your pocket" that plays only the peak of each song and
-> crossfades between them — a premium feature only JioSaavn (which owns its player) can ship.
+> I built a "Party Mode" prototype — auto-plays each song's peak, skips to the next song's
+> peak — and tested it at real parties. JioSaavn owns its player, so you could add crossfade
+> and ship this as a premium feature.
