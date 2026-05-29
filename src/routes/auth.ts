@@ -7,10 +7,12 @@ const SPOTIFY_CLIENT_ID = process.env.SPOTIFY_CLIENT_ID!;
 const SPOTIFY_CLIENT_SECRET = process.env.SPOTIFY_CLIENT_SECRET!;
 const SPOTIFY_REDIRECT_URI = process.env.SPOTIFY_REDIRECT_URI!;
 
-// Scopes needed for reading queue (read-only)
+// Scopes needed for Groovy extension
 const SCOPES = [
   'user-read-playback-state',
-  'user-read-currently-playing'
+  'user-read-currently-playing',
+  'user-read-playback-position',
+  'user-modify-playback-state'
 ].join(' ');
 
 /**
@@ -76,17 +78,23 @@ router.get('/callback', async (req: Request, res: Response) => {
 
     const { access_token, refresh_token, expires_in } = response.data;
 
-    // Send success page that auto-saves token and closes
+    // Calculate token expiry timestamp
+    const expiresAt = Date.now() + (expires_in * 1000);
+
+    // Send success page with token data for extension content script to capture
     res.send(`
+      <!DOCTYPE html>
       <html>
         <head>
+          <meta charset="UTF-8">
+          <title>Groovy - Login Successful</title>
           <style>
             body {
-              font-family: Arial, sans-serif;
+              font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
               max-width: 600px;
               margin: 50px auto;
               padding: 20px;
-              background: #1a1a1a;
+              background: #121212;
               color: #fff;
               text-align: center;
             }
@@ -102,9 +110,10 @@ router.get('/callback', async (req: Request, res: Response) => {
             .message {
               font-size: 18px;
               margin: 20px 0;
+              color: #b3b3b3;
             }
             .loader {
-              border: 3px solid #2a2a2a;
+              border: 3px solid #282828;
               border-top: 3px solid #1db954;
               border-radius: 50%;
               width: 40px;
@@ -116,40 +125,41 @@ router.get('/callback', async (req: Request, res: Response) => {
               0% { transform: rotate(0deg); }
               100% { transform: rotate(360deg); }
             }
+            .note {
+              color: #666;
+              font-size: 14px;
+              margin-top: 30px;
+            }
           </style>
         </head>
         <body>
-          <div class="success">✅</div>
+          <!-- Token data for extension content script -->
+          <div id="groovy-auth-data"
+               data-access-token="${access_token}"
+               data-refresh-token="${refresh_token}"
+               data-expires-at="${expiresAt}"
+               style="display: none;">
+          </div>
+
+          <div class="success">✓</div>
           <h1>Login Successful!</h1>
-          <p class="message">Saving your credentials...</p>
-          <div class="loader"></div>
-          <p style="color: #888; font-size: 14px; margin-top: 30px;">
-            This window will close automatically.
-          </p>
+          <p id="status-message" class="message">Saving your credentials...</p>
+          <div id="loader" class="loader"></div>
+          <p class="note">This window will close automatically.</p>
 
           <script>
-            // Auto-save token to Chrome storage and close window
-            const token = '${access_token}';
+            // The extension's content script will read the data from #groovy-auth-data
+            // and save it to chrome.storage. This page just shows a nice UI.
 
-            // Try to save via Chrome extension API
-            if (typeof chrome !== 'undefined' && chrome.storage) {
-              chrome.storage.sync.set({ spotifyToken: token }, () => {
-                console.log('Token saved!');
-                setTimeout(() => window.close(), 1500);
-              });
-            } else {
-              // Fallback: send message to opener window
-              if (window.opener) {
-                window.opener.postMessage({
-                  type: 'SPOTIFY_TOKEN',
-                  token: token
-                }, '*');
-                setTimeout(() => window.close(), 1500);
-              } else {
-                document.querySelector('.message').textContent = 'Please close this window and click the extension icon again.';
-                document.querySelector('.loader').style.display = 'none';
+            // Fallback: if extension doesn't close the tab after 5 seconds, show manual close message
+            setTimeout(() => {
+              const loader = document.getElementById('loader');
+              const message = document.getElementById('status-message');
+              if (loader && message) {
+                loader.style.display = 'none';
+                message.textContent = 'Done! You can close this tab and return to Spotify.';
               }
-            }
+            }, 5000);
           </script>
         </body>
       </html>
@@ -165,6 +175,53 @@ router.get('/callback', async (req: Request, res: Response) => {
         </body>
       </html>
     `);
+  }
+});
+
+/**
+ * POST /auth/refresh
+ * Refresh access token using refresh token
+ */
+router.post('/refresh', async (req: Request, res: Response) => {
+  const { refresh_token } = req.body;
+
+  if (!refresh_token) {
+    return res.status(400).json({ error: 'Missing refresh_token' });
+  }
+
+  try {
+    const response = await axios.post(
+      'https://accounts.spotify.com/api/token',
+      new URLSearchParams({
+        grant_type: 'refresh_token',
+        refresh_token: refresh_token
+      }),
+      {
+        headers: {
+          'Authorization': 'Basic ' + Buffer.from(
+            SPOTIFY_CLIENT_ID + ':' + SPOTIFY_CLIENT_SECRET
+          ).toString('base64'),
+          'Content-Type': 'application/x-www-form-urlencoded'
+        }
+      }
+    );
+
+    const { access_token, refresh_token: new_refresh_token, expires_in } = response.data;
+
+    // Calculate expiry timestamp
+    const expires_at = Date.now() + (expires_in * 1000);
+
+    res.json({
+      access_token,
+      refresh_token: new_refresh_token || refresh_token,
+      expires_at
+    });
+  } catch (error: any) {
+    console.error('Error refreshing token:', error.response?.data || error.message);
+    res.status(401).json({
+      error: 'Failed to refresh token',
+      details: error.response?.data?.error_description || error.message
+    });
   }
 });
 

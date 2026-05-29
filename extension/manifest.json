@@ -1,0 +1,53 @@
+{
+  "manifest_version": 3,
+  "name": "Groovy - Spotify Song Skipper",
+  "version": "1.0.0",
+  "description": "Play only the groovy parts of your Spotify songs. Skip intros, outros, and boring sections automatically.",
+  "permissions": [
+    "storage",
+    "activeTab",
+    "scripting",
+    "tabs"
+  ],
+  "host_permissions": [
+    "https://open.spotify.com/*",
+    "https://api.spotify.com/*",
+    "https://accounts.spotify.com/*",
+    "https://spotify-extension-backend.onrender.com/*"
+  ],
+  "action": {
+    "default_popup": "popup.html",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
+    }
+  },
+  "icons": {
+    "16": "icons/icon16.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
+  "background": {
+    "service_worker": "background.js",
+    "type": "module"
+  },
+  "content_scripts": [
+    {
+      "matches": ["https://open.spotify.com/*"],
+      "js": ["content.js", "eval.js"],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": ["https://spotify-extension-backend.onrender.com/auth/callback*"],
+      "js": ["auth-callback.js"],
+      "run_at": "document_idle"
+    }
+  ],
+  "web_accessible_resources": [
+    {
+      "resources": ["icons/*"],
+      "matches": ["https://open.spotify.com/*"]
+    }
+  ]
+}
